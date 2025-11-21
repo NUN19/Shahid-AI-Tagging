@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Tag Recommendation System | نظام توصية العلامات بالذكاء الاصطناعي</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #00d4aa 0%, #0066cc 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .logo {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #00d4aa 0%, #0066cc 100%);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .logo-dots {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .logo-dot {
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+        }
+
+        .logo-bar {
+            width: 24px;
+            height: 4px;
+            background: white;
+            border-radius: 2px;
+            position: relative;
+        }
+
+        .logo-bar::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            bottom: -6px;
+            width: 8px;
+            height: 6px;
+            background: white;
+            border-radius: 0 0 2px 0;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin: 0;
+            font-weight: 700;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+            margin-top: 10px;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        .input-section label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .scenario-input {
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        .scenario-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .file-upload-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 2px dashed #ccc;
+            transition: all 0.3s;
+        }
+
+        .file-upload-section:hover {
+            border-color: #667eea;
+            background: #f0f2ff;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        .file-list {
+            margin-top: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .file-item {
+            background: white;
+            padding: 8px 15px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9em;
+        }
+
+        .file-item .remove-btn {
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .analyze-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.2em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+
+        .analyze-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .analyze-btn:active {
+            transform: translateY(0);
+        }
+
+        .analyze-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .result-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-left: 5px solid #667eea;
+        }
+
+        .result-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .tags-display {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tag-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 1em;
+        }
+
+        .confidence-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .confidence-high {
+            background: #4caf50;
+            color: white;
+        }
+
+        .confidence-medium {
+            background: #ff9800;
+            color: white;
+        }
+
+        .confidence-low {
+            background: #f44336;
+            color: white;
+        }
+
+        .reasoning-box {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            line-height: 1.6;
+            color: #555;
+        }
+
+        .reference-box {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #1976d2;
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 5px solid #c62828;
+        }
+
+        .full-response {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            font-size: 0.9em;
+            color: #666;
+            white-space: pre-wrap;
+        }
+
+        /* Language selector */
+        .language-selector {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        .lang-btn {
+            padding: 8px 15px;
+            border: 2px solid rgba(255,255,255,0.5);
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .lang-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .lang-btn.active {
+            background: white;
+            color: #667eea;
+            border-color: white;
+        }
+
+        /* RTL support */
+        [dir="rtl"] {
+            direction: rtl;
+            text-align: right;
+        }
+
+        [dir="rtl"] .scenario-input {
+            text-align: right;
+        }
+
+        [dir="rtl"] .tags-display {
+            justify-content: flex-end;
+        }
+
+        [dir="rtl"] .file-item {
+            flex-direction: row-reverse;
+        }
+
+        .header {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="language-selector">
+                <button class="lang-btn active" id="langEn" onclick="switchLanguage('en')">English</button>
+                <button class="lang-btn" id="langAr" onclick="switchLanguage('ar')">العربية</button>
+            </div>
+            <div class="logo-container">
+                <div class="logo">
+                    <div class="logo-dots">
+                        <div class="logo-dot"></div>
+                        <div class="logo-dot"></div>
+                        <div class="logo-dot"></div>
+                    </div>
+                    <div class="logo-bar"></div>
+                </div>
+                <h1 id="headerTitle">Shahid AI Tagging Assistant</h1>
+            </div>
+            <p id="headerSubtitle">Describe the customer scenario and get intelligent tag recommendations</p>
+        </div>
+
+        <div class="main-content">
+            <div style="margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong style="color: #0066cc;" id="mindMapStatus">📊 Mind Map: Loaded</strong>
+                    <span id="mindMapName" style="color: #555; margin-left: 10px;"></span>
+                </div>
+                <a href="/setup" style="color: #0066cc; text-decoration: none; font-weight: 600;" id="changeMindMap">Change Mind Map</a>
+            </div>
+            <form id="analysisForm">
+                <div class="input-section">
+                    <label for="scenario" id="scenarioLabel">Customer Scenario Description *</label>
+                    <textarea 
+                        id="scenario" 
+                        class="scenario-input" 
+                        placeholder="Describe the customer's issue, complaint, or scenario in detail..."
+                        required
+                    ></textarea>
+                </div>
+
+                <div class="file-upload-section">
+                    <label id="fileLabel">Attach Photos or Videos (Optional)</label>
+                    <div class="file-input-wrapper">
+                        <input 
+                            type="file" 
+                            id="fileInput" 
+                            class="file-input" 
+                            multiple 
+                            accept="image/*,video/*"
+                        >
+                    </div>
+                    <div class="file-list" id="fileList"></div>
+                </div>
+
+                <button type="submit" class="analyze-btn" id="analyzeBtn">
+                    <span id="analyzeBtnText">🔍 Analyze & Get Tag Recommendation</span>
+                </button>
+            </form>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px; color: #666;" id="loadingText">Analyzing scenario and mind map...</p>
+            </div>
+
+            <div class="results-section" id="resultsSection">
+                <div class="result-card">
+                    <h3 id="tagsTitle">📋 Recommended Tags</h3>
+                    <div class="tags-display" id="tagsDisplay"></div>
+                    
+                    <div id="confidenceDisplay"></div>
+                    
+                    <div class="reasoning-box">
+                        <strong id="reasoningLabel">💭 Reasoning:</strong>
+                        <div id="reasoningText"></div>
+                    </div>
+                    
+                    <div class="reference-box">
+                        <strong id="referenceLabel">📊 Mind Map Reference:</strong>
+                        <div id="referenceText"></div>
+                    </div>
+
+                    <details style="margin-top: 20px;">
+                        <summary style="cursor: pointer; color: #667eea; font-weight: 600;" id="fullResponseLabel">View Full AI Response</summary>
+                        <div class="full-response" id="fullResponse"></div>
+                    </details>
+                </div>
+            </div>
+
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('analysisForm');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const loading = document.getElementById('loading');
+        const resultsSection = document.getElementById('resultsSection');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        let selectedFiles = [];
+        let mindMapLoaded = false;
+
+        // Check if mind map is loaded on page load
+        async function checkMindMap() {
+            try {
+                const response = await fetch('/api/check-mindmap');
+                const result = await response.json();
+                
+                if (!result.loaded) {
+                    // Redirect to setup if no mind map loaded
+                    window.location.href = '/setup';
+                    return;
+                }
+                
+                mindMapLoaded = true;
+                // Show mind map info
+                if (result.filename) {
+                    document.getElementById('mindMapName').textContent = result.filename;
+                    if (result.tags_count) {
+                        document.getElementById('mindMapStatus').textContent = `📊 Mind Map: ${result.tags_count} tags loaded`;
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking mind map:', error);
+                // Redirect to setup on error
+                window.location.href = '/setup';
+            }
+        }
+
+        // Check on page load
+        checkMindMap();
+
+        // Handle file selection
+        fileInput.addEventListener('change', (e) => {
+            selectedFiles = Array.from(e.target.files);
+            updateFileList();
+        });
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+            selectedFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <span>📎 ${file.name}</span>
+                    <button type="button" class="remove-btn" onclick="removeFile(${index})">×</button>
+                `;
+                fileList.appendChild(fileItem);
+            });
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+            // Update file input
+            const dt = new DataTransfer();
+            selectedFiles.forEach(file => dt.items.add(file));
+            fileInput.files = dt.files;
+        }
+
+        function displayResults(result) {
+            const t = translations[currentLang];
+            
+            // Display tags
+            const tagsDisplay = document.getElementById('tagsDisplay');
+            tagsDisplay.innerHTML = '';
+            
+            if (result.tags && result.tags.length > 0) {
+                result.tags.forEach(tag => {
+                    const tagBadge = document.createElement('div');
+                    tagBadge.className = 'tag-badge';
+                    tagBadge.textContent = tag;
+                    tagsDisplay.appendChild(tagBadge);
+                });
+            } else {
+                tagsDisplay.innerHTML = `<p style="color: #999;">${t.noTags}</p>`;
+            }
+
+            // Display confidence
+            const confidenceDisplay = document.getElementById('confidenceDisplay');
+            const confidence = result.confidence || 'Medium';
+            const confidenceClass = confidence.toLowerCase().includes('high') ? 'confidence-high' :
+                                   confidence.toLowerCase().includes('low') ? 'confidence-low' : 'confidence-medium';
+            confidenceDisplay.innerHTML = `
+                <span class="confidence-badge ${confidenceClass}">
+                    ${t.confidence} ${confidence}
+                </span>
+            `;
+
+            // Display reasoning
+            document.getElementById('reasoningText').textContent = result.reasoning || t.noReasoning;
+
+            // Display reference
+            document.getElementById('referenceText').textContent = result.mind_map_reference || t.noReference;
+
+            // Display full response
+            document.getElementById('fullResponse').textContent = result.full_response || '';
+
+            // Show results
+            resultsSection.classList.add('active');
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        // Language support
+        const translations = {
+            en: {
+                title: "Shahid AI Tagging Assistant",
+                subtitle: "Describe the customer scenario and get intelligent tag recommendations",
+                scenarioLabel: "Customer Scenario Description *",
+                scenarioPlaceholder: "Describe the customer's issue, complaint, or scenario in detail...",
+                fileLabel: "Attach Photos or Videos (Optional)",
+                analyzeBtn: "🔍 Analyze & Get Tag Recommendation",
+                loading: "Analyzing scenario and mind map...",
+                tagsTitle: "📋 Recommended Tags",
+                confidence: "Confidence:",
+                reasoning: "💭 Reasoning:",
+                reference: "📊 Mind Map Reference:",
+                fullResponse: "View Full AI Response",
+                noTags: "No specific tags identified",
+                noReasoning: "No reasoning provided",
+                noReference: "No specific reference",
+                errorScenario: "Please enter a customer scenario",
+                mindMapStatus: "📊 Mind Map: Loaded",
+                changeMindMap: "Change Mind Map"
+            },
+            ar: {
+                title: "مساعد شاهد للعلامات بالذكاء الاصطناعي",
+                subtitle: "اوصف سيناريو العميل واحصل على توصيات ذكية للعلامات",
+                scenarioLabel: "وصف سيناريو العميل *",
+                scenarioPlaceholder: "اوصف مشكلة العميل أو شكواه أو السيناريو بالتفصيل...",
+                fileLabel: "إرفاق الصور أو الفيديوهات (اختياري)",
+                analyzeBtn: "🔍 تحليل والحصول على توصية العلامة",
+                loading: "جارٍ تحليل السيناريو وخريطة العقل...",
+                tagsTitle: "📋 العلامات الموصى بها",
+                confidence: "مستوى الثقة:",
+                reasoning: "💭 المنطق:",
+                reference: "📊 مرجع خريطة العقل:",
+                fullResponse: "عرض استجابة الذكاء الاصطناعي الكاملة",
+                noTags: "لم يتم تحديد علامات محددة",
+                noReasoning: "لا يوجد منطق مقدم",
+                noReference: "لا يوجد مرجع محدد",
+                errorScenario: "الرجاء إدخال سيناريو العميل",
+                mindMapStatus: "📊 خريطة العقل: محملة",
+                changeMindMap: "تغيير خريطة العقل"
+            }
+        };
+
+        let currentLang = 'en';
+
+        function switchLanguage(lang) {
+            currentLang = lang;
+            const t = translations[lang];
+            
+            // Update UI elements
+            const headerTitle = document.getElementById('headerTitle');
+            headerTitle.textContent = t.title;
+            document.getElementById('headerSubtitle').textContent = t.subtitle;
+            document.getElementById('scenarioLabel').textContent = t.scenarioLabel;
+            document.getElementById('scenario').placeholder = t.scenarioPlaceholder;
+            document.getElementById('fileLabel').textContent = t.fileLabel;
+            document.getElementById('analyzeBtnText').textContent = t.analyzeBtn;
+            document.getElementById('loadingText').textContent = t.loading;
+            document.getElementById('tagsTitle').textContent = t.tagsTitle;
+            document.getElementById('reasoningLabel').textContent = t.reasoning;
+            document.getElementById('referenceLabel').textContent = t.reference;
+            document.getElementById('fullResponseLabel').textContent = t.fullResponse;
+            
+            // Update language buttons
+            document.getElementById('langEn').classList.toggle('active', lang === 'en');
+            document.getElementById('langAr').classList.toggle('active', lang === 'ar');
+            
+            // Update mind map status text
+            document.getElementById('mindMapStatus').textContent = t.mindMapStatus;
+            document.getElementById('changeMindMap').textContent = t.changeMindMap;
+            
+            // Set direction
+            document.body.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+            document.documentElement.setAttribute('lang', lang);
+        }
+
+
+        // Handle form submission with language support
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const scenario = document.getElementById('scenario').value.trim();
+            const t = translations[currentLang];
+            if (!scenario) {
+                showError(t.errorScenario);
+                return;
+            }
+
+            // Show loading, hide results
+            loading.classList.add('active');
+            resultsSection.classList.remove('active');
+            errorMessage.style.display = 'none';
+            analyzeBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('scenario', scenario);
+                formData.append('language', currentLang); // Send language to backend
+                
+                selectedFiles.forEach(file => {
+                    formData.append('files', file);
+                });
+
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    // Handle structured error messages
+                    if (result.details && result.solution) {
+                        showError(`${result.error}\n\n${result.details}\n\n💡 Solution: ${result.solution}`);
+                    } else if (result.details) {
+                        showError(`${result.error}\n\n${result.details}`);
+                    } else {
+                        showError(result.error);
+                    }
+                } else {
+                    displayResults(result);
+                }
+            } catch (error) {
+                showError('Failed to analyze scenario: ' + error.message);
+            } finally {
+                loading.classList.remove('active');
+                analyzeBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Mind Map | رفع خريطة العقل</title>
+    <!-- SheetJS library for client-side Excel processing -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #00d4aa 0%, #0066cc 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .logo {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #00d4aa 0%, #0066cc 100%);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .logo-dots {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .logo-dot {
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+        }
+
+        .logo-bar {
+            width: 24px;
+            height: 4px;
+            background: white;
+            border-radius: 2px;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin: 0;
+            font-weight: 700;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+            margin-top: 10px;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .upload-section {
+            margin-bottom: 30px;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9fa;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            background: #f0f2ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area.dragover {
+            background: #e3f2fd;
+            border-color: #0066cc;
+        }
+
+        .upload-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 1.2em;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .upload-hint {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .file-info.active {
+            display: block;
+        }
+
+        .file-info h3 {
+            color: #0066cc;
+            margin-bottom: 10px;
+        }
+
+        .file-info ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .file-info li {
+            padding: 5px 0;
+            color: #555;
+        }
+
+        .process-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.2em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .process-btn.active {
+            display: block;
+        }
+
+        .process-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .process-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 5px solid #c62828;
+            display: none;
+        }
+
+        .error-message.active {
+            display: block;
+        }
+
+        .success-message {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 5px solid #4caf50;
+            display: none;
+        }
+
+        .success-message.active {
+            display: block;
+        }
+
+        .language-selector {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        .lang-btn {
+            padding: 8px 15px;
+            border: 2px solid rgba(255,255,255,0.5);
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .lang-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .lang-btn.active {
+            background: white;
+            color: #667eea;
+            border-color: white;
+        }
+
+        [dir="rtl"] {
+            direction: rtl;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="language-selector">
+                <button class="lang-btn active" id="langEn" onclick="switchLanguage('en')">English</button>
+                <button class="lang-btn" id="langAr" onclick="switchLanguage('ar')">العربية</button>
+            </div>
+            <div class="logo-container">
+                <div class="logo">
+                    <div class="logo-dots">
+                        <div class="logo-dot"></div>
+                        <div class="logo-dot"></div>
+                        <div class="logo-dot"></div>
+                    </div>
+                    <div class="logo-bar"></div>
+                </div>
+                <h1 id="headerTitle">Upload Mind Map</h1>
+            </div>
+            <p id="headerSubtitle">Upload your Excel mind map file to get started</p>
+        </div>
+
+        <div class="main-content">
+            <div class="upload-section">
+                <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                    <div class="upload-icon">📊</div>
+                    <div class="upload-text" id="uploadText">Click or drag Excel file here</div>
+                    <div class="upload-hint" id="uploadHint">Supports .xlsx and .xls files</div>
+                </div>
+                <input type="file" id="fileInput" class="file-input" accept=".xlsx,.xls" />
+                
+                <div class="file-info" id="fileInfo">
+                    <h3 id="fileInfoTitle">File Information:</h3>
+                    <ul id="fileInfoList"></ul>
+                </div>
+
+                <button class="process-btn" id="processBtn" onclick="processAndUpload()">
+                    <span id="processBtnText">✅ Process & Continue</span>
+                </button>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; color: #666;" id="loadingText">Processing mind map...</p>
+                </div>
+
+                <div class="error-message" id="errorMessage"></div>
+                <div class="success-message" id="successMessage"></div>
+            </div>
+
+            <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                <h3 style="color: #667eea; margin-bottom: 10px;" id="securityTitle">🔒 Security & Privacy</h3>
+                <p style="color: #555; line-height: 1.6;" id="securityText">
+                    Your Excel file is processed entirely in your browser. The file never leaves your device. 
+                    Only the tag structure (not sensitive data) is sent to the server for AI analysis.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentLang = 'en';
+        let selectedFile = null;
+        let processedData = null;
+
+        const translations = {
+            en: {
+                title: "Upload Mind Map",
+                subtitle: "Upload your Excel mind map file to get started",
+                uploadText: "Click or drag Excel file here",
+                uploadHint: "Supports .xlsx and .xls files",
+                fileInfo: "File Information:",
+                processBtn: "✅ Process & Continue",
+                loading: "Processing mind map...",
+                securityTitle: "🔒 Security & Privacy",
+                securityText: "Your Excel file is processed entirely in your browser. The file never leaves your device. Only the tag structure (not sensitive data) is sent to the server for AI analysis.",
+                errorNoFile: "Please select an Excel file",
+                errorInvalidFile: "Invalid file. Please select a valid Excel file (.xlsx or .xls)",
+                errorProcessing: "Error processing file: ",
+                successProcessing: "Mind map processed successfully!",
+                successRedirecting: "Redirecting to main app..."
+            },
+            ar: {
+                title: "رفع خريطة العقل",
+                subtitle: "قم برفع ملف Excel لخريطة العقل للبدء",
+                uploadText: "انقر أو اسحب ملف Excel هنا",
+                uploadHint: "يدعم ملفات .xlsx و .xls",
+                fileInfo: "معلومات الملف:",
+                processBtn: "✅ معالجة والمتابعة",
+                loading: "جارٍ معالجة خريطة العقل...",
+                securityTitle: "🔒 الأمان والخصوصية",
+                securityText: "يتم معالجة ملف Excel بالكامل في متصفحك. الملف لا يغادر جهازك أبداً. يتم إرسال هيكل العلامات فقط (وليس البيانات الحساسة) إلى الخادم لتحليل الذكاء الاصطناعي.",
+                errorNoFile: "الرجاء اختيار ملف Excel",
+                errorInvalidFile: "ملف غير صالح. الرجاء اختيار ملف Excel صالح (.xlsx أو .xls)",
+                errorProcessing: "خطأ في معالجة الملف: ",
+                successProcessing: "تم معالجة خريطة العقل بنجاح!",
+                successRedirecting: "جارٍ التوجيه إلى التطبيق الرئيسي..."
+            }
+        };
+
+        function switchLanguage(lang) {
+            currentLang = lang;
+            const t = translations[lang];
+            
+            document.getElementById('headerTitle').textContent = t.title;
+            document.getElementById('headerSubtitle').textContent = t.subtitle;
+            document.getElementById('uploadText').textContent = t.uploadText;
+            document.getElementById('uploadHint').textContent = t.uploadHint;
+            document.getElementById('fileInfoTitle').textContent = t.fileInfo;
+            document.getElementById('processBtnText').textContent = t.processBtn;
+            document.getElementById('loadingText').textContent = t.loading;
+            document.getElementById('securityTitle').textContent = t.securityTitle;
+            document.getElementById('securityText').textContent = t.securityText;
+            
+            document.getElementById('langEn').classList.toggle('active', lang === 'en');
+            document.getElementById('langAr').classList.toggle('active', lang === 'ar');
+            document.body.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+        }
+
+        // File input handler
+        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+
+        // Drag and drop handlers
+        const uploadArea = document.getElementById('uploadArea');
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                document.getElementById('fileInput').files = files;
+                handleFileSelect({ target: { files: files } });
+            }
+        });
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const t = translations[currentLang];
+
+            // Validate file type
+            const validTypes = [
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+                'application/vnd.ms-excel' // .xls
+            ];
+            const validExtensions = ['.xlsx', '.xls'];
+            const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+
+            if (!validExtensions.includes(fileExt) && !validTypes.includes(file.type)) {
+                showError(t.errorInvalidFile);
+                return;
+            }
+
+            selectedFile = file;
+            displayFileInfo(file);
+            document.getElementById('processBtn').classList.add('active');
+            hideError();
+        }
+
+        function displayFileInfo(file) {
+            const fileInfo = document.getElementById('fileInfo');
+            const fileInfoList = document.getElementById('fileInfoList');
+            
+            fileInfoList.innerHTML = `
+                <li><strong>Name:</strong> ${file.name}</li>
+                <li><strong>Size:</strong> ${(file.size / 1024).toFixed(2)} KB</li>
+                <li><strong>Type:</strong> ${file.type || 'Excel file'}</li>
+            `;
+            fileInfo.classList.add('active');
+        }
+
+        function processAndUpload() {
+            if (!selectedFile) {
+                const t = translations[currentLang];
+                showError(t.errorNoFile);
+                return;
+            }
+
+            const t = translations[currentLang];
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('processBtn').disabled = true;
+            hideError();
+            hideSuccess();
+
+            // Read and process Excel file in browser (client-side)
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+
+                    // Convert to JSON structure (only structure, not sensitive data)
+                    const mindMapData = {};
+                    workbook.SheetNames.forEach(sheetName => {
+                        const worksheet = workbook.Sheets[sheetName];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+                        mindMapData[sheetName] = jsonData;
+                    });
+
+                    processedData = mindMapData;
+
+                    // Send to server (only structure, not full data)
+                    uploadMindMap(mindMapData, selectedFile.name);
+
+                } catch (error) {
+                    document.getElementById('loading').classList.remove('active');
+                    document.getElementById('processBtn').disabled = false;
+                    showError(t.errorProcessing + error.message);
+                }
+            };
+
+            reader.onerror = function() {
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('processBtn').disabled = false;
+                showError(t.errorProcessing + 'Failed to read file');
+            };
+
+            reader.readAsArrayBuffer(selectedFile);
+        }
+
+        async function uploadMindMap(mindMapData, filename) {
+            const t = translations[currentLang];
+            
+            try {
+                const response = await fetch('/api/upload-mindmap', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        mind_map_data: mindMapData,
+                        filename: filename
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+
+                // Success!
+                document.getElementById('loading').classList.remove('active');
+                showSuccess(t.successProcessing);
+                
+                // Redirect to main app after 1 second
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
+
+            } catch (error) {
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('processBtn').disabled = false;
+                showError(t.errorProcessing + error.message);
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('active');
+        }
+
+        function hideError() {
+            document.getElementById('errorMessage').classList.remove('active');
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.classList.add('active');
+        }
+
+        function hideSuccess() {
+            document.getElementById('successMessage').classList.remove('active');
+        }
+    </script>
+</body>
+</html>
+
