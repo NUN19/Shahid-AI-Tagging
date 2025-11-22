@@ -113,9 +113,19 @@ def get_mind_map_parser():
 def get_ai_analyzer():
     """Get or create AI analyzer for current session"""
     global ai_analyzer
+    # Check if we already have an analyzer for this session
+    # Use session ID to ensure consistency
+    session_id = session.get('_id', None)
+    
     parser = get_mind_map_parser()
     if parser:
-        ai_analyzer = AIAnalyzer(parser)
+        # Only create new analyzer if we don't have one or if parser changed
+        # This ensures safety settings are initialized once and reused
+        if ai_analyzer is None or not hasattr(ai_analyzer, 'mind_map_parser') or ai_analyzer.mind_map_parser != parser:
+            print(f"[APP] Creating new AIAnalyzer for session {session_id}")
+            ai_analyzer = AIAnalyzer(parser)
+        else:
+            print(f"[APP] Reusing existing AIAnalyzer for session {session_id}")
         return ai_analyzer
     return None
 

@@ -31,20 +31,40 @@ class AIAnalyzer:
                 import google.generativeai as genai
                 genai.configure(api_key=api_key)
                 self.genai = genai
-                # Try to import safety enums with fallback
+                # Try to import safety enums with multiple fallbacks - CRITICAL for consistent behavior
+                self.HarmCategory = None
+                self.HarmBlockThreshold = None
+                self.safety_settings = None
+                
+                # Method 1: Direct import (preferred)
                 try:
                     from google.generativeai.types import HarmCategory, HarmBlockThreshold
                     self.HarmCategory = HarmCategory
                     self.HarmBlockThreshold = HarmBlockThreshold
-                except (ImportError, AttributeError):
-                    # Fallback: use genai.types if direct import fails
+                    # Pre-create safety settings in __init__ to ensure consistency
+                    self.safety_settings = {
+                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                    }
+                    print("[INIT] Safety filters disabled using direct import")
+                except (ImportError, AttributeError) as e1:
+                    print(f"[INIT] Direct import failed: {e1}, trying genai.types...")
+                    # Method 2: Use genai.types
                     try:
                         self.HarmCategory = genai.types.HarmCategory
                         self.HarmBlockThreshold = genai.types.HarmBlockThreshold
-                    except AttributeError:
-                        # Last resort: set to None and handle in _call_gemini
-                        self.HarmCategory = None
-                        self.HarmBlockThreshold = None
+                        self.safety_settings = {
+                            genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                            genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                            genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                            genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                        }
+                        print("[INIT] Safety filters disabled using genai.types")
+                    except (AttributeError, TypeError) as e2:
+                        print(f"[INIT] genai.types failed: {e2}, will try in _call_gemini")
+                        # Will be handled in _call_gemini with additional fallbacks
             except ImportError:
                 raise ImportError("Google Generative AI package not installed. Run: pip install google-generativeai")
         
@@ -267,60 +287,96 @@ FORMAT:
                     raise Exception(f"Model '{model_name}' not available. The model may not exist or your API key doesn't have access. Error: {error_msg}")
                 raise
             
-            # DISABLE ALL SAFETY FILTERS - Set to BLOCK_NONE for all categories
-            # Try multiple approaches to ensure it works on all platforms
-            safety_settings = None
+            # DISABLE ALL SAFETY FILTERS - CRITICAL: Always ensure safety_settings is set
+            # Use pre-initialized settings if available, otherwise try all fallback methods
+            safety_settings = self.safety_settings  # Use pre-initialized if available
             
-            if self.HarmCategory and self.HarmBlockThreshold:
-                try:
-                    # Method 1: Use enum values directly (preferred)
-                    safety_settings = {
-                        self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_NONE,
-                        self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_NONE,
-                        self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_NONE,
-                        self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_NONE,
-                    }
-                    print("[API] Safety filters disabled using enum values")
-                except (AttributeError, TypeError) as e:
-                    print(f"[API] Enum method failed: {e}, trying alternative...")
+            if not safety_settings:
+                # Fallback: Try to create safety settings now with multiple methods
+                if self.HarmCategory and self.HarmBlockThreshold:
                     try:
-                        # Method 2: Use integer values (BLOCK_NONE = 0)
+                        # Method 1: Use enum values directly
                         safety_settings = {
-                            self.HarmCategory.HARM_CATEGORY_HARASSMENT: 0,
-                            self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: 0,
-                            self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: 0,
-                            self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: 0,
+                            self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_NONE,
+                            self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_NONE,
+                            self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_NONE,
+                            self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_NONE,
                         }
-                        print("[API] Safety filters disabled using integer values")
-                    except Exception as e2:
-                        print(f"[API] Integer method failed: {e2}, trying string values...")
+                        print("[API] Safety filters disabled using enum values (fallback)")
+                    except (AttributeError, TypeError) as e:
+                        print(f"[API] Enum method failed: {e}, trying integer values...")
                         try:
-                            # Method 3: Use string values
-                            safety_settings = [
-                                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-                            ]
-                            print("[API] Safety filters disabled using string values")
-                        except Exception as e3:
-                            print(f"[API] All safety setting methods failed: {e3}, proceeding without safety settings")
-                            safety_settings = None
-            else:
-                print("[API] HarmCategory/HarmBlockThreshold not available, trying direct import...")
-                try:
-                    # Last resort: try importing directly in the method
-                    from google.generativeai.types import HarmCategory, HarmBlockThreshold
-                    safety_settings = {
-                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                    }
-                    print("[API] Safety filters disabled using direct import")
-                except Exception as e:
-                    print(f"[API] Direct import also failed: {e}, proceeding without safety settings")
-                    safety_settings = None
+                            # Method 2: Use integer values (BLOCK_NONE = 0)
+                            safety_settings = {
+                                self.HarmCategory.HARM_CATEGORY_HARASSMENT: 0,
+                                self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: 0,
+                                self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: 0,
+                                self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: 0,
+                            }
+                            print("[API] Safety filters disabled using integer values")
+                        except Exception as e2:
+                            print(f"[API] Integer method failed: {e2}, trying direct import...")
+                            try:
+                                # Method 3: Direct import in method
+                                from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                                safety_settings = {
+                                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                                }
+                                print("[API] Safety filters disabled using direct import")
+                            except Exception as e3:
+                                print(f"[API] Direct import failed: {e3}, trying genai.types...")
+                                try:
+                                    # Method 4: Use genai.types
+                                    safety_settings = {
+                                        self.genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
+                                        self.genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
+                                        self.genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
+                                        self.genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
+                                    }
+                                    print("[API] Safety filters disabled using genai.types")
+                                except Exception as e4:
+                                    print(f"[API] All methods failed: {e4}")
+                                    # CRITICAL: If all methods fail, we MUST still try to disable filters
+                                    # Use a workaround: create a minimal safety settings dict
+                                    try:
+                                        # Last resort: try to access via getattr
+                                        HarmCat = getattr(self.genai.types, 'HarmCategory', None)
+                                        HarmBlock = getattr(self.genai.types, 'HarmBlockThreshold', None)
+                                        if HarmCat and HarmBlock:
+                                            safety_settings = {
+                                                getattr(HarmCat, 'HARM_CATEGORY_HARASSMENT'): getattr(HarmBlock, 'BLOCK_NONE'),
+                                                getattr(HarmCat, 'HARM_CATEGORY_HATE_SPEECH'): getattr(HarmBlock, 'BLOCK_NONE'),
+                                                getattr(HarmCat, 'HARM_CATEGORY_SEXUALLY_EXPLICIT'): getattr(HarmBlock, 'BLOCK_NONE'),
+                                                getattr(HarmCat, 'HARM_CATEGORY_DANGEROUS_CONTENT'): getattr(HarmBlock, 'BLOCK_NONE'),
+                                            }
+                                            print("[API] Safety filters disabled using getattr workaround")
+                                    except Exception as e5:
+                                        print(f"[API] CRITICAL: All safety setting methods failed. Error: {e5}")
+                                        # This should never happen, but if it does, log it
+                                        safety_settings = None
+                else:
+                    # Try direct import as last resort
+                    try:
+                        from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                        safety_settings = {
+                            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                        }
+                        print("[API] Safety filters disabled using direct import (no HarmCategory available)")
+                    except Exception as e:
+                        print(f"[API] CRITICAL ERROR: Cannot disable safety filters: {e}")
+                        safety_settings = None
+            
+            # CRITICAL: If safety_settings is still None, we have a serious problem
+            # Log it and proceed, but this should be rare
+            if safety_settings is None:
+                print("[API] WARNING: safety_settings is None - default restrictive filters will be used!")
+                print("[API] This may cause intermittent blocking. Check logs above for initialization errors.")
             
             # Prepare generation config
             gen_config = {
@@ -328,15 +384,18 @@ FORMAT:
                 "max_output_tokens": 1500,  # Reduced to save tokens
             }
             
+            # CRITICAL: Always pass safety_settings if available, never skip it
             # For text-only requests
             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
                 if safety_settings:
+                    print("[API] Making request with safety_settings (BLOCK_NONE)")
                     response = model.generate_content(
                         prompt,
                         generation_config=gen_config,
                         safety_settings=safety_settings
                     )
                 else:
+                    print("[API] WARNING: Making request WITHOUT safety_settings - default filters will apply!")
                     response = model.generate_content(
                         prompt,
                         generation_config=gen_config
@@ -344,12 +403,14 @@ FORMAT:
             else:
                 # For requests with images, use content_parts
                 if safety_settings:
+                    print("[API] Making request with images and safety_settings (BLOCK_NONE)")
                     response = model.generate_content(
                         content_parts,
                         generation_config=gen_config,
                         safety_settings=safety_settings
                     )
                 else:
+                    print("[API] WARNING: Making request with images WITHOUT safety_settings - default filters will apply!")
                     response = model.generate_content(
                         content_parts,
                         generation_config=gen_config
