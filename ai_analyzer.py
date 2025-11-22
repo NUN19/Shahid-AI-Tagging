@@ -316,6 +316,45 @@ FORMAT:
                 "max_output_tokens": 1500,  # Reduced to save tokens
             }
             
+            # Set timeout for API calls (25 seconds per request to prevent hanging)
+            # This prevents worker timeouts - use threading timeout for better compatibility
+            import threading
+            
+            # Set timeout for this request (25 seconds per call)
+            request_timeout_seconds = 25
+            api_response = [None]  # Use list to store result (mutable)
+            api_exception = [None]  # Use list to store exception
+            
+            def api_call_with_timeout():
+                """Execute API call in a separate thread with timeout"""
+                try:
+                    if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
+                        if safety_settings:
+                            api_response[0] = model.generate_content(
+                                prompt,
+                                generation_config=gen_config,
+                                safety_settings=safety_settings
+                            )
+                        else:
+                            api_response[0] = model.generate_content(
+                                prompt,
+                                generation_config=gen_config
+                            )
+                    else:
+                        if safety_settings:
+                            api_response[0] = model.generate_content(
+                                content_parts,
+                                generation_config=gen_config,
+                                safety_settings=safety_settings
+                            )
+                        else:
+                            api_response[0] = model.generate_content(
+                                content_parts,
+                                generation_config=gen_config
+                            )
+                except Exception as e:
+                    api_exception[0] = e
+            
             # CRITICAL: Always pass safety_settings if available, never skip it
             # Log the actual safety_settings being used for debugging
             if safety_settings:
@@ -330,33 +369,26 @@ FORMAT:
             # This ensures they're applied correctly without conflicts
             print("[API] Making request with safety_settings in generate_content() (BLOCK_NONE)")
             
-            # For text-only requests
-            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                # CRITICAL: Always pass safety_settings explicitly in generate_content
-                if safety_settings:
-                    response = model.generate_content(
-                        prompt,
-                        generation_config=gen_config,
-                        safety_settings=safety_settings
-                    )
-                else:
-                    response = model.generate_content(
-                        prompt,
-                        generation_config=gen_config
-                    )
-            else:
-                # For requests with images, use content_parts
-                if safety_settings:
-                    response = model.generate_content(
-                        content_parts,
-                        generation_config=gen_config,
-                        safety_settings=safety_settings
-                    )
-                else:
-                    response = model.generate_content(
-                        content_parts,
-                        generation_config=gen_config
-                    )
+            # Execute API call with timeout protection
+            api_thread = threading.Thread(target=api_call_with_timeout)
+            api_thread.daemon = True  # Allow main thread to exit even if this is still running
+            api_thread.start()
+            api_thread.join(timeout=request_timeout_seconds)
+            
+            if api_thread.is_alive():
+                # Thread is still running - request timed out
+                print(f"[API] WARNING: API call timed out after {request_timeout_seconds} seconds")
+                raise Exception(f"API call timed out after {request_timeout_seconds} seconds. The request took too long to complete.")
+            
+            # Check for exceptions
+            if api_exception[0]:
+                raise api_exception[0]
+            
+            # Get response
+            if api_response[0] is None:
+                raise Exception("API call returned no response")
+            
+            response = api_response[0]
             
             # Check response structure - handle safety filters FIRST before accessing text
             if hasattr(response, 'candidates') and response.candidates:
@@ -406,7 +438,8 @@ FORMAT:
                             pass
                         
                         # RETRY 1: Try with list format safety_settings (alternative format)
-                        print("[API] Retry 1: Trying with list format safety_settings...")
+                        # Use shorter timeout for retries (15 seconds)
+                        print("[API] Retry 1: Trying with list format safety_settings (15s timeout)...")
                         try:
                             # Convert to list format
                             list_format_settings = self._convert_safety_settings_to_list_format(safety_settings)
@@ -448,7 +481,8 @@ FORMAT:
                             print(f"[API] Retry 1 failed: {retry_error}, trying Retry 2...")
                         
                         # RETRY 2: Try with BLOCK_ONLY_HIGH as fallback (less restrictive than default)
-                        print("[API] Retry 2: Trying with BLOCK_ONLY_HIGH threshold...")
+                        # Use shorter timeout for retries (15 seconds)
+                        print("[API] Retry 2: Trying with BLOCK_ONLY_HIGH threshold (15s timeout)...")
                         try:
                             # Create BLOCK_ONLY_HIGH settings as fallback
                             fallback_settings = self._get_safety_settings_block_only_high()
@@ -490,7 +524,8 @@ FORMAT:
                             print(f"[API] Retry 2 failed: {retry2_error}, trying Retry 3...")
                         
                         # RETRY 3: Try WITHOUT safety_settings (let model use defaults - sometimes works better)
-                        print("[API] Retry 3: Trying WITHOUT safety_settings (using model defaults)...")
+                        # Use shorter timeout for retries (15 seconds)
+                        print("[API] Retry 3: Trying WITHOUT safety_settings (15s timeout)...")
                         try:
                             # Try without safety_settings - some API keys/models work better this way
                             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
