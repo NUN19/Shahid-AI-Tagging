@@ -124,13 +124,15 @@ class AIAnalyzer:
         # Build optimized, shorter system prompt to reduce token usage
         # IMPORTANT: Add business-focused instructions to avoid safety filter triggers
         if is_arabic:
-            system_prompt = f"""Analyze customer scenarios and recommend tags from the mind map.
+            system_prompt = f"""You are a customer support tag classification system for a legitimate business service.
+
+CONTEXT: This is a business application for categorizing customer service requests. All scenarios are legitimate business inquiries about service usage, technical issues, or account management.
 
 MIND MAP:
 {mind_map_context}
 
-TASK: Match scenario to mind map tags. Output in English only.
-IMPORTANT: Focus on technical and business aspects. Use neutral, professional language.
+TASK: Analyze the customer scenario and recommend appropriate tags from the mind map. Output in English only.
+IMPORTANT: This is a business context. Focus on technical and business aspects only. Use neutral, professional language. All terms refer to legitimate business operations.
 
 FORMAT:
 - Recommended Tag(s): [exact tag names from mind map]
@@ -138,13 +140,15 @@ FORMAT:
 - Reasoning: [brief explanation in English]
 - Mind Map Reference: [sheet/row reference]"""
         else:
-            system_prompt = f"""Analyze customer scenarios and recommend tags from the mind map.
+            system_prompt = f"""You are a customer support tag classification system for a legitimate business service.
+
+CONTEXT: This is a business application for categorizing customer service requests. All scenarios are legitimate business inquiries about service usage, technical issues, or account management.
 
 MIND MAP:
 {mind_map_context}
 
-TASK: Match scenario to mind map tags.
-IMPORTANT: Focus on technical and business aspects. Use neutral, professional language.
+TASK: Analyze the customer scenario and recommend appropriate tags from the mind map.
+IMPORTANT: This is a business context. Focus on technical and business aspects only. Use neutral, professional language. All terms refer to legitimate business operations.
 
 FORMAT:
 - Recommended Tag(s): [exact tag names from mind map]
@@ -160,12 +164,9 @@ FORMAT:
             }
         ]
         
-        # CRITICAL: Always neutralize scenario BEFORE first API call to prevent blocking
-        # This is proactive prevention, not reactive recovery
-        neutralized_scenario = self._neutralize_scenario_text(scenario_text)
-        
-        # Add user scenario (optimized, shorter prompt) - use neutralized version
-        user_content = f"SCENARIO:\n{neutralized_scenario}\n\nAnalyze and recommend tags. Output in English. Focus on technical and business aspects only."
+        # Use original scenario text verbatim - no neutralization
+        # Add user scenario with business context
+        user_content = f"CUSTOMER SERVICE SCENARIO:\n{scenario_text}\n\nAnalyze this customer service request and recommend appropriate tags. Output in English. Focus on technical and business aspects only."
         
         # Handle file attachments (images/videos)
         if file_paths:
@@ -189,9 +190,9 @@ FORMAT:
         })
         
         try:
-            # Call Gemini API - pass neutralized scenario for consistency
+            # Call Gemini API - pass original scenario text verbatim
             if self.provider == 'gemini':
-                ai_response = self._call_gemini(messages, file_paths, neutralized_scenario)
+                ai_response = self._call_gemini(messages, file_paths, scenario_text)
             else:
                 raise ValueError(f"Unsupported provider: {self.provider}. Only 'gemini' is supported.")
             
@@ -284,21 +285,233 @@ FORMAT:
         
         # Single attempt only - no retries
         try:
-            # Verify model is available before making request
+            # DISABLE ALL SAFETY FILTERS - Get safety settings first
+            safety_settings = self._get_safety_settings()
+            
+            # Verify model is available and configure with safety settings
             try:
-                model = self.genai.GenerativeModel(model_name)
-                print(f"[API] Using model: {model_name} with key: {os.getenv('GEMINI_API_KEY')[:20]}...")
+                # Create model with safety settings configured at model level
+                if safety_settings:
+                    model = self.genai.GenerativeModel(
+                        model_name,
+                        safety_settings=safety_settings
+                    )
+                    print(f"[API] Using model: {model_name} with safety_settings configured at model level")
+                else:
+                    model = self.genai.GenerativeModel(model_name)
+                    print(f"[API] Using model: {model_name} (WARNING: no safety_settings available)")
+                print(f"[API] API key: {os.getenv('GEMINI_API_KEY')[:20]}...")
             except Exception as model_error:
                 error_msg = str(model_error)
                 if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
                     raise Exception(f"Model '{model_name}' not available. The model may not exist or your API key doesn't have access. Error: {error_msg}")
                 raise
             
-            # DISABLE ALL SAFETY FILTERS - CRITICAL: Always ensure safety_settings is set
-            # Use pre-initialized settings if available, otherwise try all fallback methods
-            safety_settings = self.safety_settings  # Use pre-initialized if available
+            # CRITICAL: If safety_settings is still None, we have a serious problem
+            # Log it and proceed, but this should be rare
+            if safety_settings is None:
+                print("[API] WARNING: safety_settings is None - default restrictive filters will be used!")
+                print("[API] This may cause intermittent blocking. Check logs above for initialization errors.")
             
-            if not safety_settings:
+            # Prepare generation config
+            gen_config = {
+                "temperature": 0.3,
+                "max_output_tokens": 1500,  # Reduced to save tokens
+            }
+            
+            # CRITICAL: Always pass safety_settings if available, never skip it
+            # Log the actual safety_settings being used for debugging
+            if safety_settings:
+                print(f"[API] Safety settings being used: {type(safety_settings)}")
+                if isinstance(safety_settings, dict):
+                    for key, value in safety_settings.items():
+                        print(f"[API]   {key}: {value} (type: {type(value)})")
+                else:
+                    print(f"[API]   {safety_settings}")
+            
+            # Make request - safety_settings are configured at model level, so we don't need to pass them again
+            # But we'll pass them explicitly as well to ensure they're applied
+            print("[API] Making request with safety_settings configured (BLOCK_NONE)")
+            
+            # For text-only requests
+            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
+                response = model.generate_content(
+                    prompt,
+                    generation_config=gen_config,
+                    safety_settings=safety_settings if safety_settings else None
+                )
+            else:
+                # For requests with images, use content_parts
+                response = model.generate_content(
+                    content_parts,
+                    generation_config=gen_config,
+                    safety_settings=safety_settings if safety_settings else None
+                )
+            
+            # Check response structure - handle safety filters FIRST before accessing text
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                
+                # Check finish_reason FIRST (before trying to access text)
+                # finish_reason 2 = SAFETY, 3 = RECITATION, etc.
+                finish_reason = getattr(candidate, 'finish_reason', None)
+                
+                # Log detailed safety information for debugging
+                print(f"[API] Response finish_reason: {finish_reason}")
+                
+                # Check safety ratings if available
+                if hasattr(candidate, 'safety_ratings'):
+                    safety_ratings = candidate.safety_ratings
+                    print(f"[API] Safety ratings: {safety_ratings}")
+                    for rating in safety_ratings:
+                        print(f"[API]   - {getattr(rating, 'category', 'unknown')}: {getattr(rating, 'probability', 'unknown')} (threshold: {getattr(rating, 'threshold', 'unknown')})")
+                
+                # CRITICAL: If we set BLOCK_NONE but still get SAFETY finish_reason,
+                # Try to extract response anyway - sometimes partial content is available
+                if finish_reason == 'SAFETY' or finish_reason == 2:
+                    # Check if we actually set safety_settings
+                    if safety_settings:
+                        print(f"[API] WARNING: Content blocked despite BLOCK_NONE settings!")
+                        print(f"[API] Safety settings used: {safety_settings}")
+                        
+                        # Try to extract any available content despite the safety block
+                        # Sometimes Gemini returns partial content even with SAFETY finish_reason
+                        try:
+                            if hasattr(response, 'text') and response.text:
+                                print("[API] Found text despite SAFETY finish_reason, using it")
+                                return response.text
+                        except:
+                            pass
+                        
+                        # Try accessing parts directly
+                        try:
+                            if hasattr(candidate, 'content') and candidate.content:
+                                if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                                    if len(candidate.content.parts) > 0:
+                                        part = candidate.content.parts[0]
+                                        if hasattr(part, 'text') and part.text:
+                                            print("[API] Found text in parts despite SAFETY finish_reason, using it")
+                                            return part.text
+                        except:
+                            pass
+                        
+                        # RETRY: If blocked despite BLOCK_NONE, retry with original text (no neutralization)
+                        # Sometimes Gemini needs a retry even with BLOCK_NONE
+                        print("[API] Retrying with original text (safety filters should be disabled)...")
+                        try:
+                            # Retry with exact same prompt - no changes
+                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
+                                retry_response = model.generate_content(
+                                    prompt,
+                                    generation_config=gen_config,
+                                    safety_settings=safety_settings if safety_settings else None
+                                )
+                            else:
+                                retry_response = model.generate_content(
+                                    content_parts,
+                                    generation_config=gen_config,
+                                    safety_settings=safety_settings if safety_settings else None
+                                )
+                            
+                            # Check retry response
+                            if hasattr(retry_response, 'candidates') and retry_response.candidates:
+                                retry_candidate = retry_response.candidates[0]
+                                retry_finish_reason = getattr(retry_candidate, 'finish_reason', None)
+                                
+                                if retry_finish_reason != 'SAFETY' and retry_finish_reason != 2:
+                                    print("[API] Retry successful!")
+                                    if hasattr(retry_response, 'text') and retry_response.text:
+                                        return retry_response.text
+                                    # Try parts
+                                    if hasattr(retry_candidate, 'content') and retry_candidate.content:
+                                        if hasattr(retry_candidate.content, 'parts') and retry_candidate.content.parts:
+                                            if len(retry_candidate.content.parts) > 0:
+                                                part = retry_candidate.content.parts[0]
+                                                if hasattr(part, 'text'):
+                                                    return part.text
+                                else:
+                                    print("[API] Retry also blocked - safety filters may not be properly disabled")
+                            else:
+                                print("[API] Retry response invalid")
+                        except Exception as retry_error:
+                            print(f"[API] Retry failed: {retry_error}")
+                        
+                        # If retry also fails, provide error message
+                        raise Exception("Content was blocked by Gemini safety filters despite BLOCK_NONE settings. Please check that your API key has permissions to disable safety filters, or contact Google Cloud support.")
+                    
+                    else:
+                        raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
+                
+                # Handle other blocking reasons
+                if finish_reason and finish_reason != 1:  # 1 = STOP (success)
+                    reason_map = {
+                        2: 'SAFETY',
+                        3: 'RECITATION',
+                        4: 'OTHER',
+                        5: 'MAX_TOKENS'
+                    }
+                    reason_name = reason_map.get(finish_reason, f'REASON_{finish_reason}')
+                    raise Exception(f"Gemini API response blocked: {reason_name}. Please try rephrasing your scenario.")
+                
+                # Now safely try to get text (only if finish_reason is OK)
+                # Try response.text first (easiest)
+                try:
+                    if hasattr(response, 'text') and response.text:
+                        return response.text
+                except Exception:
+                    # If response.text fails, try accessing parts directly
+                    pass
+                
+                # Try accessing text from candidate parts
+                if hasattr(candidate, 'content') and candidate.content:
+                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                        if len(candidate.content.parts) > 0:
+                            part = candidate.content.parts[0]
+                            if hasattr(part, 'text'):
+                                return part.text
+                            elif isinstance(part, dict) and 'text' in part:
+                                return part['text']
+                
+                # If we get here, no text was found
+                raise Exception("Empty response from Gemini API - no text content returned")
+            
+            # Fallback: try response.text if no candidates structure
+            elif hasattr(response, 'text') and response.text:
+                return response.text
+            else:
+                raise Exception("Empty response from Gemini API - no candidates or text returned")
+                
+        except Exception as e:
+            error_msg = str(e)
+            error_type = type(e).__name__
+            
+            # Better error handling for Gemini
+            if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
+                raise Exception(f"Gemini model '{model_name}' not available. Error: {error_msg}")
+            elif "403" in error_msg or "permission" in error_msg.lower() or "API key" in error_msg.lower():
+                raise Exception(f"Gemini API key invalid or permission denied. Please check your GEMINI_API_KEY in .env file. Error: {error_msg}")
+            elif ("429" in error_msg or 
+                  "quota" in error_msg.lower() or 
+                  "rate limit" in error_msg.lower() or 
+                  "RESOURCE_EXHAUSTED" in error_msg or
+                  "resource_exhausted" in error_msg.lower() or
+                  "Quota exceeded" in error_msg or
+                  "quota exceeded" in error_msg.lower()):
+                # Check if this is actually a rate limit or a model error
+                if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
+                    raise Exception(f"Model '{model_name}' not available. This might be causing the error. Try using 'gemini-1.5-flash' instead. Error: {error_msg}")
+                raise Exception(f"Gemini API rate limit exceeded. Please wait 2-3 minutes and try again. Free tier: 15 requests/minute, 1,500 requests/day. Error: {error_msg}")
+            elif "safety" in error_msg.lower() or "blocked" in error_msg.lower():
+                raise Exception(f"Content was blocked by Gemini safety filters. Please try rephrasing your scenario. Error: {error_msg}")
+            else:
+                raise Exception(f"Gemini API error: {error_msg}")
+    
+    def _get_safety_settings(self):
+        """Get safety settings with all filters disabled - returns None if cannot be created"""
+        # Use pre-initialized settings if available
+        safety_settings = self.safety_settings
+        
+        if not safety_settings:
                 # Fallback: Try to create safety settings now with multiple methods
                 if self.HarmCategory and self.HarmBlockThreshold:
                     try:
@@ -378,234 +591,33 @@ FORMAT:
                     except Exception as e:
                         print(f"[API] CRITICAL ERROR: Cannot disable safety filters: {e}")
                         safety_settings = None
-            
-            # CRITICAL: If safety_settings is still None, we have a serious problem
-            # Log it and proceed, but this should be rare
-            if safety_settings is None:
-                print("[API] WARNING: safety_settings is None - default restrictive filters will be used!")
-                print("[API] This may cause intermittent blocking. Check logs above for initialization errors.")
-            
-            # Prepare generation config
-            gen_config = {
-                "temperature": 0.3,
-                "max_output_tokens": 1500,  # Reduced to save tokens
-            }
-            
-            # CRITICAL: Always pass safety_settings if available, never skip it
-            # Log the actual safety_settings being used for debugging
-            if safety_settings:
-                print(f"[API] Safety settings being used: {type(safety_settings)}")
-                if isinstance(safety_settings, dict):
-                    for key, value in safety_settings.items():
-                        print(f"[API]   {key}: {value} (type: {type(value)})")
-                else:
-                    print(f"[API]   {safety_settings}")
-            
-            # For text-only requests
-            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                if safety_settings:
-                    print("[API] Making request with safety_settings (BLOCK_NONE)")
-                    try:
-                        response = model.generate_content(
-                            prompt,
-                            generation_config=gen_config,
-                            safety_settings=safety_settings
-                        )
-                    except Exception as api_error:
-                        print(f"[API] Error with safety_settings: {api_error}")
-                        # If safety_settings format is wrong, try without it as last resort
-                        print("[API] Retrying without safety_settings...")
-                        response = model.generate_content(
-                            prompt,
-                            generation_config=gen_config
-                        )
-                else:
-                    print("[API] WARNING: Making request WITHOUT safety_settings - default filters will apply!")
-                    response = model.generate_content(
-                        prompt,
-                        generation_config=gen_config
-                    )
-            else:
-                # For requests with images, use content_parts
-                if safety_settings:
-                    print("[API] Making request with images and safety_settings (BLOCK_NONE)")
-                    response = model.generate_content(
-                        content_parts,
-                        generation_config=gen_config,
-                        safety_settings=safety_settings
-                    )
-                else:
-                    print("[API] WARNING: Making request with images WITHOUT safety_settings - default filters will apply!")
-                    response = model.generate_content(
-                        content_parts,
-                        generation_config=gen_config
-                    )
-            
-            # Check response structure - handle safety filters FIRST before accessing text
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                
-                # Check finish_reason FIRST (before trying to access text)
-                # finish_reason 2 = SAFETY, 3 = RECITATION, etc.
-                finish_reason = getattr(candidate, 'finish_reason', None)
-                
-                # Log detailed safety information for debugging
-                print(f"[API] Response finish_reason: {finish_reason}")
-                
-                # Check safety ratings if available
-                if hasattr(candidate, 'safety_ratings'):
-                    safety_ratings = candidate.safety_ratings
-                    print(f"[API] Safety ratings: {safety_ratings}")
-                    for rating in safety_ratings:
-                        print(f"[API]   - {getattr(rating, 'category', 'unknown')}: {getattr(rating, 'probability', 'unknown')} (threshold: {getattr(rating, 'threshold', 'unknown')})")
-                
-                # CRITICAL: If we set BLOCK_NONE but still get SAFETY finish_reason,
-                # Try to extract response anyway - sometimes partial content is available
-                if finish_reason == 'SAFETY' or finish_reason == 2:
-                    # Check if we actually set safety_settings
-                    if safety_settings:
-                        print(f"[API] WARNING: Content blocked despite BLOCK_NONE settings!")
-                        print(f"[API] Safety settings used: {safety_settings}")
-                        
-                        # Try to extract any available content despite the safety block
-                        # Sometimes Gemini returns partial content even with SAFETY finish_reason
-                        try:
-                            if hasattr(response, 'text') and response.text:
-                                print("[API] Found text despite SAFETY finish_reason, using it")
-                                return response.text
-                        except:
-                            pass
-                        
-                        # Try accessing parts directly
-                        try:
-                            if hasattr(candidate, 'content') and candidate.content:
-                                if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                                    if len(candidate.content.parts) > 0:
-                                        part = candidate.content.parts[0]
-                                        if hasattr(part, 'text') and part.text:
-                                            print("[API] Found text in parts despite SAFETY finish_reason, using it")
-                                            return part.text
-                        except:
-                            pass
-                        
-                        # AUTOMATIC RETRY: If blocked, retry with a more neutral, business-focused prompt
-                        print("[API] Retrying with neutralized prompt to bypass safety filters...")
-                        try:
-                            # Create a more neutral version of the prompt
-                            neutral_prompt = self._neutralize_prompt(prompt, scenario_text)
-                            
-                            # Retry with neutralized prompt
-                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                                retry_response = model.generate_content(
-                                    neutral_prompt,
-                                    generation_config=gen_config,
-                                    safety_settings=safety_settings
-                                )
-                            else:
-                                # For images, modify the text part only
-                                neutral_content_parts = [neutral_prompt] + content_parts[1:]
-                                retry_response = model.generate_content(
-                                    neutral_content_parts,
-                                    generation_config=gen_config,
-                                    safety_settings=safety_settings
-                                )
-                            
-                            # Check retry response
-                            if hasattr(retry_response, 'candidates') and retry_response.candidates:
-                                retry_candidate = retry_response.candidates[0]
-                                retry_finish_reason = getattr(retry_candidate, 'finish_reason', None)
-                                
-                                if retry_finish_reason != 'SAFETY' and retry_finish_reason != 2:
-                                    print("[API] Retry successful with neutralized prompt!")
-                                    if hasattr(retry_response, 'text') and retry_response.text:
-                                        return retry_response.text
-                                    # Try parts
-                                    if hasattr(retry_candidate, 'content') and retry_candidate.content:
-                                        if hasattr(retry_candidate.content, 'parts') and retry_candidate.content.parts:
-                                            if len(retry_candidate.content.parts) > 0:
-                                                part = retry_candidate.content.parts[0]
-                                                if hasattr(part, 'text'):
-                                                    return part.text
-                                else:
-                                    print("[API] Retry also blocked, using fallback response")
-                            else:
-                                print("[API] Retry response invalid, using fallback")
-                        except Exception as retry_error:
-                            print(f"[API] Retry failed: {retry_error}")
-                        
-                        # If retry also fails, provide a helpful error message
-                        raise Exception("Content was blocked by Gemini safety filters despite BLOCK_NONE settings. The system attempted an automatic retry with a neutralized prompt but was still blocked. Please try rephrasing your scenario in a more neutral, business-focused way, avoiding any sensitive terms.")
-                    else:
-                        raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
-                
-                # Handle other blocking reasons
-                if finish_reason and finish_reason != 1:  # 1 = STOP (success)
-                    reason_map = {
-                        2: 'SAFETY',
-                        3: 'RECITATION',
-                        4: 'OTHER',
-                        5: 'MAX_TOKENS'
-                    }
-                    reason_name = reason_map.get(finish_reason, f'REASON_{finish_reason}')
-                    raise Exception(f"Gemini API response blocked: {reason_name}. Please try rephrasing your scenario.")
-                
-                # Now safely try to get text (only if finish_reason is OK)
-                # Try response.text first (easiest)
-                try:
-                    if hasattr(response, 'text') and response.text:
-                        return response.text
-                except Exception:
-                    # If response.text fails, try accessing parts directly
-                    pass
-                
-                # Try accessing text from candidate parts
-                if hasattr(candidate, 'content') and candidate.content:
-                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                        if len(candidate.content.parts) > 0:
-                            part = candidate.content.parts[0]
-                            if hasattr(part, 'text'):
-                                return part.text
-                            elif isinstance(part, dict) and 'text' in part:
-                                return part['text']
-                
-                # If we get here, no text was found
-                raise Exception("Empty response from Gemini API - no text content returned")
-            
-            # Fallback: try response.text if no candidates structure
-            elif hasattr(response, 'text') and response.text:
-                return response.text
-            else:
-                raise Exception("Empty response from Gemini API - no candidates or text returned")
-                
-        except Exception as e:
-            error_msg = str(e)
-            error_type = type(e).__name__
-            
-            # Better error handling for Gemini
-            if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
-                raise Exception(f"Gemini model '{model_name}' not available. Error: {error_msg}")
-            elif "403" in error_msg or "permission" in error_msg.lower() or "API key" in error_msg.lower():
-                raise Exception(f"Gemini API key invalid or permission denied. Please check your GEMINI_API_KEY in .env file. Error: {error_msg}")
-            elif ("429" in error_msg or 
-                  "quota" in error_msg.lower() or 
-                  "rate limit" in error_msg.lower() or 
-                  "RESOURCE_EXHAUSTED" in error_msg or
-                  "resource_exhausted" in error_msg.lower() or
-                  "Quota exceeded" in error_msg or
-                  "quota exceeded" in error_msg.lower()):
-                # Check if this is actually a rate limit or a model error
-                if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
-                    raise Exception(f"Model '{model_name}' not available. This might be causing the error. Try using 'gemini-1.5-flash' instead. Error: {error_msg}")
-                raise Exception(f"Gemini API rate limit exceeded. Please wait 2-3 minutes and try again. Free tier: 15 requests/minute, 1,500 requests/day. Error: {error_msg}")
-            elif "safety" in error_msg.lower() or "blocked" in error_msg.lower():
-                raise Exception(f"Content was blocked by Gemini safety filters. Please try rephrasing your scenario. Error: {error_msg}")
-            else:
-                raise Exception(f"Gemini API error: {error_msg}")
-    
+        
+        return safety_settings
     def _neutralize_scenario_text(self, scenario_text):
         """Neutralize scenario text to avoid safety filter triggers while preserving meaning
         This is called BEFORE the first API call to prevent blocking proactively"""
         import re
+        
+        # Start with original text
+        neutral_scenario = scenario_text.lower()  # Normalize to lowercase first for better matching
+        
+        # Multi-word phrases first (longer patterns before shorter ones)
+        phrase_replacements = [
+            (r'\breached\s+the\s+limit\b', 'reached the threshold'),
+            (r'\breach\s+the\s+limit\b', 'reach the threshold'),
+            (r'\breaching\s+the\s+limit\b', 'reaching the threshold'),
+            (r'\bdifferent\s+ip\s+addresses?\b', 'different network locations'),
+            (r'\bdifferent\s+ips\b', 'different network locations'),
+            (r'\bip\s+addresses?\b', 'network addresses'),
+            (r'\bips\b', 'network addresses'),
+            (r'\bip\b', 'network address'),
+            (r'\bfrom\s+different\s+ips?\b', 'from multiple network locations'),
+            (r'\bstreaming\s+from\s+different\s+ips?\b', 'streaming from multiple network locations'),
+        ]
+        
+        # Apply phrase replacements first
+        for pattern, replacement in phrase_replacements:
+            neutral_scenario = re.sub(pattern, replacement, neutral_scenario, flags=re.IGNORECASE)
         
         # Comprehensive list of potentially sensitive terms and their neutral business equivalents
         neutral_replacements = {
@@ -629,17 +641,11 @@ FORMAT:
             'abused': 'misused',
             'abusing': 'misusing',
             
-            # Limit/threshold terms
+            # Limit/threshold terms (handle carefully to preserve meaning)
             'limit': 'threshold',
             'limited': 'restricted',
             'limiting': 'restricting',
-            
-            # IP/Network terms that might trigger
-            'ip address': 'network address',
-            'ip addresses': 'network addresses',
-            'ips': 'network addresses',
-            'different ip': 'different network location',
-            'different ips': 'different network locations',
+            'limits': 'thresholds',
             
             # Account/access terms
             'suspended': 'restricted',
@@ -666,9 +672,6 @@ FORMAT:
             'destroyed': 'removed',
         }
         
-        # Start with original text
-        neutral_scenario = scenario_text
-        
         # Apply all replacements (case-insensitive, whole word only)
         for sensitive, neutral in neutral_replacements.items():
             # Use word boundaries to avoid partial matches
@@ -680,14 +683,18 @@ FORMAT:
         neutral_scenario = re.sub(r'!{2,}', '!', neutral_scenario)  # Multiple exclamation marks
         neutral_scenario = re.sub(r'\?{2,}', '?', neutral_scenario)  # Multiple question marks
         
+        # Capitalize first letter to maintain readability
+        if neutral_scenario:
+            neutral_scenario = neutral_scenario[0].upper() + neutral_scenario[1:] if len(neutral_scenario) > 1 else neutral_scenario.upper()
+        
         # Log if any changes were made
-        if neutral_scenario != scenario_text:
+        if neutral_scenario.lower() != scenario_text.lower():
             print(f"[API] Scenario neutralized: {len(scenario_text)} -> {len(neutral_scenario)} chars")
             # Log first 100 chars of changes for debugging
             if len(scenario_text) > 0:
                 diff_start = min(100, len(scenario_text))
-                print(f"[API] Original preview: {scenario_text[:diff_start]}...")
-                print(f"[API] Neutralized preview: {neutral_scenario[:diff_start]}...")
+                print(f"[API] Original: {scenario_text[:diff_start]}...")
+                print(f"[API] Neutralized: {neutral_scenario[:diff_start]}...")
         
         return neutral_scenario
     
@@ -696,13 +703,52 @@ FORMAT:
         neutralized_scenario = self._neutralize_scenario_text(scenario_text)
         
         # Rebuild prompt with neutralized scenario
-        if "SCENARIO:" in original_prompt:
-            system_part = original_prompt.split("SCENARIO:")[0]
-            neutral_prompt = f"{system_part}SCENARIO:\n{neutralized_scenario}\n\nAnalyze and recommend tags. Output in English. Focus on technical and business aspects only."
+        if "SCENARIO:" in original_prompt or "CUSTOMER SERVICE SCENARIO" in original_prompt:
+            # Find the scenario section and replace it
+            if "CUSTOMER SERVICE SCENARIO" in original_prompt:
+                system_part = original_prompt.split("CUSTOMER SERVICE SCENARIO")[0]
+                neutral_prompt = f"{system_part}CUSTOMER SERVICE SCENARIO (Business Context):\n{neutralized_scenario}\n\nAnalyze this legitimate business customer service request and recommend appropriate tags. Output in English. Focus on technical and business aspects only. This is a standard customer support inquiry."
+            else:
+                system_part = original_prompt.split("SCENARIO:")[0]
+                neutral_prompt = f"{system_part}SCENARIO:\n{neutralized_scenario}\n\nAnalyze and recommend tags. Output in English. Focus on technical and business aspects only."
         else:
             neutral_prompt = original_prompt.replace(scenario_text, neutralized_scenario)
         
         return neutral_prompt
+    
+    def _create_ultra_sanitized_prompt(self, scenario_text, mind_map_context):
+        """Create an ultra-sanitized prompt with explicit business context wrapper"""
+        # Apply aggressive neutralization
+        ultra_neutral = self._neutralize_scenario_text(scenario_text)
+        
+        # Further sanitize: replace any remaining potentially problematic terms
+        import re
+        # Replace any remaining technical terms that might trigger filters
+        ultra_neutral = re.sub(r'\b(ip|ips|address|addresses)\b', 'network location', ultra_neutral, flags=re.IGNORECASE)
+        ultra_neutral = re.sub(r'\b(limit|limits)\b', 'threshold', ultra_neutral, flags=re.IGNORECASE)
+        
+        # Create ultra-safe prompt with explicit business context
+        ultra_prompt = f"""You are analyzing a customer service ticket for a legitimate streaming service business.
+
+This is a standard business customer support scenario. The customer is reporting a technical issue with their service usage. All terminology refers to legitimate business operations.
+
+MIND MAP DATA:
+{mind_map_context[:3000]}
+
+CUSTOMER INQUIRY (Business Support Ticket):
+{ultra_neutral}
+
+TASK: Classify this customer service ticket by matching it to tags in the mind map. This is a routine business operation for customer support categorization.
+
+OUTPUT FORMAT:
+- Recommended Tag(s): [tag names from mind map]
+- Confidence: [High/Medium/Low]
+- Reasoning: [brief business-focused explanation]
+- Mind Map Reference: [sheet/row]
+
+Remember: This is a legitimate business customer support scenario. Focus on technical and business aspects only."""
+        
+        return ultra_prompt
     
     def _is_arabic_text(self, text):
         """Check if text contains Arabic characters"""
