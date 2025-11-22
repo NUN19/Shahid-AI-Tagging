@@ -16,6 +16,9 @@ ENV/
 uploads/
 *.tmp
 
+# Sessions (server-side session storage)
+sessions/
+
 # Excel files (users upload their own)
 *.xlsx
 *.xls

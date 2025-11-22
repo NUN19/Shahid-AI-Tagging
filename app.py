@@ -4,9 +4,11 @@ Helps agents select appropriate tags based on customer scenarios using mind map 
 """
 
 from flask import Flask, render_template, request, jsonify, session
+from flask_session import Session
 import os
 import secrets
 import json
+import time
 from dotenv import load_dotenv
 from mind_map_parser import MindMapParser
 from ai_analyzer import AIAnalyzer
@@ -17,17 +19,30 @@ load_dotenv()
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['SESSION_FOLDER'] = 'sessions'
 
-# Session configuration for secure client-side processing
+# Session configuration - use server-side storage to avoid cookie size limits
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', secrets.token_hex(32))
-# Secure cookies: True for production (HTTPS), False for local development
-app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production' or os.getenv('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
+app.config['SESSION_TYPE'] = 'filesystem'  # Store sessions on server, not in cookies
+app.config['SESSION_FILE_DIR'] = app.config['SESSION_FOLDER']
+app.config['SESSION_FILE_THRESHOLD'] = 500
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
+# Secure cookies: True for production (HTTPS), False for local development
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production' or os.getenv('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
 
-# Ensure upload folder exists
+# Initialize Flask-Session
+Session(app)
+
+# Ensure folders exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['SESSION_FOLDER'], exist_ok=True)
+
+# Server-side storage for mind map data (keyed by session ID)
+# This avoids cookie size limits
+mind_map_storage = {}
 
 # Global components (will be session-based)
 mind_map_parser = None
@@ -35,12 +50,19 @@ ai_analyzer = None
 
 def get_mind_map_parser():
     """Get or create mind map parser for current session"""
-    global mind_map_parser
+    global mind_map_parser, mind_map_storage
     
-    if 'mind_map_data' in session:
-        # Load from session (client-side processed data)
+    # Get session ID
+    session_id = session.get('_id', session.sid if hasattr(session, 'sid') else None)
+    if not session_id:
+        # Generate session ID if not exists
+        session_id = secrets.token_hex(16)
+        session['_id'] = session_id
+    
+    # Check server-side storage (avoids cookie size limits)
+    if session_id in mind_map_storage:
         try:
-            data_dict = session['mind_map_data']
+            data_dict = mind_map_storage[session_id]['data']
             
             # Validate data structure
             if not isinstance(data_dict, dict):
@@ -73,7 +95,7 @@ def get_mind_map_parser():
             mind_map_parser = MindMapParser(data_dict=parsed_data)
             return mind_map_parser
         except Exception as e:
-            print(f"Error loading mind map from session: {e}")
+            print(f"Error loading mind map from storage: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -130,16 +152,30 @@ def upload_mindmap():
         if len(mind_map_data) == 0:
             return jsonify({'error': 'Mind map data is empty. Please ensure the Excel file has data.'}), 400
         
-        # Store mind map data in session (already processed client-side)
-        # Data structure: {sheet_name: [{col1: val1, col2: val2, ...}, ...]}
-        session['mind_map_data'] = mind_map_data
-        session['mind_map_filename'] = data.get('filename', 'uploaded_mind_map.xlsx')
+        # Store mind map data server-side (not in cookie to avoid size limits)
+        # Get or create session ID
+        session_id = session.get('_id', secrets.token_hex(16))
+        session['_id'] = session_id
         session.permanent = True
+        
+        # Store in server-side storage (avoids cookie size limit of 4KB)
+        mind_map_storage[session_id] = {
+            'data': mind_map_data,
+            'filename': data.get('filename', 'uploaded_mind_map.xlsx'),
+            'timestamp': time.time()
+        }
+        
+        # Only store filename in session cookie (small)
+        session['mind_map_filename'] = data.get('filename', 'uploaded_mind_map.xlsx')
         
         # Verify it can be parsed
         try:
             parser = get_mind_map_parser()
             if not parser:
+                # Clean up storage if parsing failed
+                session_id = session.get('_id')
+                if session_id and session_id in mind_map_storage:
+                    del mind_map_storage[session_id]
                 return jsonify({
                     'error': 'Failed to parse mind map data',
                     'details': 'The uploaded Excel file could not be processed. Please check the file format.'
@@ -151,13 +187,15 @@ def upload_mindmap():
             
             return jsonify({
                 'success': True,
-                'filename': session['mind_map_filename'],
+                'filename': session.get('mind_map_filename', 'uploaded_mind_map.xlsx'),
                 'sheets': sheets_count,
                 'tags': total_tags
             })
         except Exception as parse_error:
-            # Clear session if parsing failed
-            session.pop('mind_map_data', None)
+            # Clean up storage if parsing failed
+            session_id = session.get('_id')
+            if session_id and session_id in mind_map_storage:
+                del mind_map_storage[session_id]
             session.pop('mind_map_filename', None)
             return jsonify({
                 'error': 'Failed to parse mind map data',
@@ -262,6 +300,21 @@ def get_tags():
 def setup():
     """Setup page for mind map upload"""
     return render_template('setup.html')
+
+# Cleanup old session data periodically (older than 24 hours)
+def cleanup_old_sessions():
+    """Remove old session data from storage"""
+    global mind_map_storage
+    current_time = time.time()
+    expired_sessions = []
+    for session_id, data in mind_map_storage.items():
+        if current_time - data.get('timestamp', 0) > 86400:  # 24 hours
+            expired_sessions.append(session_id)
+    for session_id in expired_sessions:
+        del mind_map_storage[session_id]
+
+# Cleanup on startup
+cleanup_old_sessions()
 
 if __name__ == '__main__':
     # Get host and port from environment variables, with defaults
