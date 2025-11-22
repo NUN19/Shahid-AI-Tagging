@@ -526,10 +526,33 @@
                     })
                 });
 
-                const result = await response.json();
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                let result;
+                
+                if (contentType && contentType.includes('application/json')) {
+                    result = await response.json();
+                } else {
+                    // If not JSON, try to parse as text first
+                    const text = await response.text();
+                    try {
+                        result = JSON.parse(text);
+                    } catch (e) {
+                        // If parsing fails, it's probably an HTML error page
+                        throw new Error(`Server error (${response.status}): ${response.statusText}. Please check the server logs.`);
+                    }
+                }
 
                 if (result.error) {
-                    throw new Error(result.error);
+                    // Handle structured error messages
+                    let errorMessage = result.error;
+                    if (result.details) {
+                        errorMessage += '\n\n' + result.details;
+                    }
+                    if (result.solution) {
+                        errorMessage += '\n\n💡 Solution: ' + result.solution;
+                    }
+                    throw new Error(errorMessage);
                 }
 
                 // Success!

@@ -41,16 +41,41 @@ def get_mind_map_parser():
         # Load from session (client-side processed data)
         try:
             data_dict = session['mind_map_data']
+            
+            # Validate data structure
+            if not isinstance(data_dict, dict):
+                print("Error: mind_map_data is not a dictionary")
+                return None
+            
+            if len(data_dict) == 0:
+                print("Error: mind_map_data is empty")
+                return None
+            
             # Convert JSON data back to DataFrames
             parsed_data = {}
             for sheet_name, sheet_data in data_dict.items():
                 # sheet_data is a list of dictionaries (rows)
-                parsed_data[sheet_name] = pd.DataFrame(sheet_data)
+                if not isinstance(sheet_data, list):
+                    print(f"Error: Sheet '{sheet_name}' data is not a list")
+                    continue
+                
+                if len(sheet_data) == 0:
+                    print(f"Warning: Sheet '{sheet_name}' is empty")
+                    # Create empty DataFrame with at least one row to avoid errors
+                    parsed_data[sheet_name] = pd.DataFrame([{}])
+                else:
+                    parsed_data[sheet_name] = pd.DataFrame(sheet_data)
+            
+            if len(parsed_data) == 0:
+                print("Error: No valid sheets found in mind map data")
+                return None
             
             mind_map_parser = MindMapParser(data_dict=parsed_data)
             return mind_map_parser
         except Exception as e:
             print(f"Error loading mind map from session: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     else:
         # Try to load from file (backward compatibility)
@@ -85,35 +110,69 @@ def index():
 def upload_mindmap():
     """Receive mind map summary from client (Excel processed client-side)"""
     try:
+        # Check content type
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
+        
         data = request.get_json()
         
-        if not data or 'mind_map_data' not in data:
-            return jsonify({'error': 'No mind map data provided'}), 400
+        if not data:
+            return jsonify({'error': 'No data provided. Please ensure the request contains JSON data.'}), 400
+        
+        if 'mind_map_data' not in data:
+            return jsonify({'error': 'No mind map data provided. The request must include mind_map_data.'}), 400
+        
+        # Validate mind_map_data structure
+        mind_map_data = data['mind_map_data']
+        if not isinstance(mind_map_data, dict):
+            return jsonify({'error': 'Invalid mind map data format. Expected a dictionary of sheets.'}), 400
+        
+        if len(mind_map_data) == 0:
+            return jsonify({'error': 'Mind map data is empty. Please ensure the Excel file has data.'}), 400
         
         # Store mind map data in session (already processed client-side)
         # Data structure: {sheet_name: [{col1: val1, col2: val2, ...}, ...]}
-        session['mind_map_data'] = data['mind_map_data']
+        session['mind_map_data'] = mind_map_data
         session['mind_map_filename'] = data.get('filename', 'uploaded_mind_map.xlsx')
         session.permanent = True
         
         # Verify it can be parsed
-        parser = get_mind_map_parser()
-        if not parser:
-            return jsonify({'error': 'Failed to parse mind map data'}), 400
-        
-        # Get summary info
-        sheets_count = len(parser.data)
-        total_tags = len(parser.get_all_tags())
-        
-        return jsonify({
-            'success': True,
-            'filename': session['mind_map_filename'],
-            'sheets': sheets_count,
-            'tags': total_tags
-        })
+        try:
+            parser = get_mind_map_parser()
+            if not parser:
+                return jsonify({
+                    'error': 'Failed to parse mind map data',
+                    'details': 'The uploaded Excel file could not be processed. Please check the file format.'
+                }), 400
+            
+            # Get summary info
+            sheets_count = len(parser.data)
+            total_tags = len(parser.get_all_tags())
+            
+            return jsonify({
+                'success': True,
+                'filename': session['mind_map_filename'],
+                'sheets': sheets_count,
+                'tags': total_tags
+            })
+        except Exception as parse_error:
+            # Clear session if parsing failed
+            session.pop('mind_map_data', None)
+            session.pop('mind_map_filename', None)
+            return jsonify({
+                'error': 'Failed to parse mind map data',
+                'details': str(parse_error),
+                'solution': 'Please ensure your Excel file is valid and contains data in the expected format.'
+            }), 400
     
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # Always return JSON, never HTML
+        error_msg = str(e)
+        return jsonify({
+            'error': 'Upload failed',
+            'details': error_msg,
+            'solution': 'Please try again. If the problem persists, check that your Excel file is valid.'
+        }), 500
 
 @app.route('/api/check-mindmap', methods=['GET'])
 def check_mindmap():
