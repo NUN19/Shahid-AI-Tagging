@@ -29,8 +29,11 @@ class AIAnalyzer:
                 raise ValueError("GEMINI_API_KEY not found. Get a free key at: https://makersuite.google.com/app/apikey")
             try:
                 import google.generativeai as genai
+                from google.generativeai.types import HarmCategory, HarmBlockThreshold
                 genai.configure(api_key=api_key)
                 self.genai = genai
+                self.HarmCategory = HarmCategory
+                self.HarmBlockThreshold = HarmBlockThreshold
             except ImportError:
                 raise ImportError("Google Generative AI package not installed. Run: pip install google-generativeai")
         
@@ -243,51 +246,23 @@ FORMAT:
         
         # Single attempt only - no retries
         try:
-            # Configure safety settings to DISABLE all filters for business use
-            # CRITICAL: Using list format which is more reliable with Gemini API
-            # BLOCK_NONE = 0 means no blocking at all
-            try:
-                from google.generativeai.types import HarmCategory, HarmBlockThreshold
-                # Use list format with enum values (most reliable)
-                safety_settings = [
-                    {
-                        "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
-                        "threshold": HarmBlockThreshold.BLOCK_NONE
-                    },
-                    {
-                        "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                        "threshold": HarmBlockThreshold.BLOCK_NONE
-                    },
-                    {
-                        "category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                        "threshold": HarmBlockThreshold.BLOCK_NONE
-                    },
-                    {
-                        "category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                        "threshold": HarmBlockThreshold.BLOCK_NONE
-                    }
-                ]
-            except (ImportError, AttributeError):
-                # Fallback: Use list format with numeric values (BLOCK_NONE = 0)
-                safety_settings = [
-                    {"category": 1, "threshold": 0},  # HARM_CATEGORY_HARASSMENT: BLOCK_NONE
-                    {"category": 2, "threshold": 0},  # HARM_CATEGORY_HATE_SPEECH: BLOCK_NONE
-                    {"category": 3, "threshold": 0},  # HARM_CATEGORY_SEXUALLY_EXPLICIT: BLOCK_NONE
-                    {"category": 4, "threshold": 0}   # HARM_CATEGORY_DANGEROUS_CONTENT: BLOCK_NONE
-                ]
-            
             # Verify model is available before making request
             try:
-                model = self.genai.GenerativeModel(
-                    model_name,
-                    safety_settings=safety_settings
-                )
-                print(f"[API] Using model: {model_name} with safety filters DISABLED (BLOCK_NONE)")
+                model = self.genai.GenerativeModel(model_name)
+                print(f"[API] Using model: {model_name} with key: {os.getenv('GEMINI_API_KEY')[:20]}...")
             except Exception as model_error:
                 error_msg = str(model_error)
                 if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
                     raise Exception(f"Model '{model_name}' not available. The model may not exist or your API key doesn't have access. Error: {error_msg}")
                 raise
+            
+            # DISABLE ALL SAFETY FILTERS - Set to BLOCK_NONE for all categories
+            safety_settings = {
+                self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_NONE,
+                self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_NONE,
+                self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_NONE,
+                self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_NONE,
+            }
             
             # For text-only requests
             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
@@ -297,7 +272,7 @@ FORMAT:
                         "temperature": 0.3,
                         "max_output_tokens": 1500,  # Reduced to save tokens
                     },
-                    safety_settings=safety_settings  # CRITICAL: Apply safety settings to disable filters
+                    safety_settings=safety_settings
                 )
             else:
                 # For requests with images, use content_parts
@@ -307,7 +282,7 @@ FORMAT:
                         "temperature": 0.3,
                         "max_output_tokens": 1500,  # Reduced to save tokens
                     },
-                    safety_settings=safety_settings  # CRITICAL: Apply safety settings to disable filters
+                    safety_settings=safety_settings
                 )
             
             # Check response structure - handle safety filters FIRST before accessing text
@@ -319,11 +294,8 @@ FORMAT:
                 finish_reason = getattr(candidate, 'finish_reason', None)
                 
                 # Handle safety filters - check both string and numeric codes
-                # NOTE: This should NOT happen if BLOCK_NONE is set correctly
                 if finish_reason == 'SAFETY' or finish_reason == 2:
-                    # Log warning that safety filters are still active despite BLOCK_NONE
-                    print(f"[WARNING] Safety filter blocked content despite BLOCK_NONE settings. finish_reason: {finish_reason}")
-                    raise Exception("Content was blocked by Gemini safety filters despite disabled settings. This may indicate an API configuration issue. Please try rephrasing your scenario or contact support.")
+                    raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
                 
                 # Handle other blocking reasons
                 if finish_reason and finish_reason != 1:  # 1 = STOP (success)

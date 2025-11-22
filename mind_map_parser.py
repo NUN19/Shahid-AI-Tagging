@@ -28,7 +28,6 @@ class MindMapParser:
             # Initialize from file (backward compatibility)
             if not os.path.exists(excel_file_path):
                 raise FileNotFoundError(f"Mind map file not found: {excel_file_path}")
-            self.excel_file_path = excel_file_path
             self.load_mind_map()
         else:
             raise ValueError("Either excel_file_path or data_dict must be provided")
