@@ -379,10 +379,24 @@ Output in English. Focus on technical and business aspects only."""
                 raise
             
             # CRITICAL: If safety_settings is still None, we have a serious problem
-            # Log it and proceed, but this should be rare
+            # Try one more time with direct import as absolute last resort
             if safety_settings is None:
-                print("[API] WARNING: safety_settings is None - default restrictive filters will be used!")
-                print("[API] This may cause intermittent blocking. Check logs above for initialization errors.")
+                print("[API] CRITICAL: safety_settings is None - attempting emergency initialization...")
+                try:
+                    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                    safety_settings = {
+                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                    }
+                    print("[API] Emergency initialization successful!")
+                    # Cache it for future use
+                    self.safety_settings = safety_settings
+                except Exception as emergency_error:
+                    print(f"[API] CRITICAL ERROR: Emergency initialization failed: {emergency_error}")
+                    print("[API] WARNING: Proceeding without safety_settings - default restrictive filters will be used!")
+                    print("[API] This WILL cause blocking. Check logs above for initialization errors.")
             
             # Prepare generation config
             gen_config = {
@@ -483,37 +497,33 @@ Output in English. Focus on technical and business aspects only."""
                         print(f"[API]   - {getattr(rating, 'category', 'unknown')}: {getattr(rating, 'probability', 'unknown')} (threshold: {getattr(rating, 'threshold', 'unknown')})")
                 
                 # CRITICAL: If we set BLOCK_NONE but still get SAFETY finish_reason,
-                # Try to extract response anyway - sometimes partial content is available
-                if finish_reason == 'SAFETY' or finish_reason == 2:
+                # DO NOT return partial responses - they are incomplete and unreliable
+                # Always retry with different settings to get a complete response
+                finish_reason_str = str(finish_reason) if finish_reason is not None else None
+                finish_reason_int = int(finish_reason) if (finish_reason is not None and isinstance(finish_reason, (int, str)) and str(finish_reason).isdigit()) else None
+                
+                # Check if finish_reason indicates safety block (handle both string and int formats)
+                is_safety_block = (
+                    finish_reason == 'SAFETY' or 
+                    finish_reason == 2 or 
+                    finish_reason_str == 'SAFETY' or
+                    finish_reason_str == '2' or
+                    finish_reason_int == 2
+                )
+                
+                if is_safety_block:
                     # Check if we actually set safety_settings
                     if safety_settings:
                         print(f"[API] WARNING: Content blocked despite BLOCK_NONE settings!")
                         print(f"[API] Safety settings used: {safety_settings}")
+                        print(f"[API] Finish reason: {finish_reason} (type: {type(finish_reason)})")
                         
-                        # Try to extract any available content despite the safety block
-                        # Sometimes Gemini returns partial content even with SAFETY finish_reason
-                        try:
-                            if hasattr(response, 'text') and response.text:
-                                print("[API] Found text despite SAFETY finish_reason, using it")
-                                return response.text
-                        except:
-                            pass
-                        
-                        # Try accessing parts directly
-                        try:
-                            if hasattr(candidate, 'content') and candidate.content:
-                                if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                                    if len(candidate.content.parts) > 0:
-                                        part = candidate.content.parts[0]
-                                        if hasattr(part, 'text') and part.text:
-                                            print("[API] Found text in parts despite SAFETY finish_reason, using it")
-                                            return part.text
-                        except:
-                            pass
+                        # DO NOT extract partial content - it's unreliable and causes inconsistent results
+                        # Always proceed to retries to get a complete, valid response
+                        print("[API] Skipping partial content extraction - proceeding to retries for complete response")
                         
                         # RETRY 1: Try with list format safety_settings (alternative format)
-                        # Use shorter timeout for retries (15 seconds)
-                        print("[API] Retry 1: Trying with list format safety_settings (15s timeout)...")
+                        print("[API] Retry 1: Trying with list format safety_settings...")
                         try:
                             # Convert to list format
                             list_format_settings = self._convert_safety_settings_to_list_format(safety_settings)
@@ -531,32 +541,18 @@ Output in English. Focus on technical and business aspects only."""
                                     safety_settings=list_format_settings if list_format_settings else safety_settings
                                 )
                             
-                            # Check retry response
-                            if hasattr(retry_response, 'candidates') and retry_response.candidates:
-                                retry_candidate = retry_response.candidates[0]
-                                retry_finish_reason = getattr(retry_candidate, 'finish_reason', None)
-                                
-                                if retry_finish_reason != 'SAFETY' and retry_finish_reason != 2:
-                                    print("[API] Retry 1 successful with list format!")
-                                    if hasattr(retry_response, 'text') and retry_response.text:
-                                        return retry_response.text
-                                    # Try parts
-                                    if hasattr(retry_candidate, 'content') and retry_candidate.content:
-                                        if hasattr(retry_candidate.content, 'parts') and retry_candidate.content.parts:
-                                            if len(retry_candidate.content.parts) > 0:
-                                                part = retry_candidate.content.parts[0]
-                                                if hasattr(part, 'text'):
-                                                    return part.text
-                                else:
-                                    print("[API] Retry 1 also blocked, trying Retry 2...")
+                            # Validate retry response - must have valid finish_reason and text
+                            retry_text = self._extract_and_validate_response(retry_response, "Retry 1")
+                            if retry_text:
+                                print("[API] Retry 1 successful with list format!")
+                                return retry_text
                             else:
-                                print("[API] Retry 1 response invalid, trying Retry 2...")
+                                print("[API] Retry 1 failed validation, trying Retry 2...")
                         except Exception as retry_error:
-                            print(f"[API] Retry 1 failed: {retry_error}, trying Retry 2...")
+                            print(f"[API] Retry 1 exception: {retry_error}, trying Retry 2...")
                         
                         # RETRY 2: Try with BLOCK_ONLY_HIGH as fallback (less restrictive than default)
-                        # Use shorter timeout for retries (15 seconds)
-                        print("[API] Retry 2: Trying with BLOCK_ONLY_HIGH threshold (15s timeout)...")
+                        print("[API] Retry 2: Trying with BLOCK_ONLY_HIGH threshold...")
                         try:
                             # Create BLOCK_ONLY_HIGH settings as fallback
                             fallback_settings = self._get_safety_settings_block_only_high()
@@ -574,32 +570,18 @@ Output in English. Focus on technical and business aspects only."""
                                     safety_settings=fallback_settings if fallback_settings else safety_settings
                                 )
                             
-                            # Check retry response
-                            if hasattr(retry2_response, 'candidates') and retry2_response.candidates:
-                                retry2_candidate = retry2_response.candidates[0]
-                                retry2_finish_reason = getattr(retry2_candidate, 'finish_reason', None)
-                                
-                                if retry2_finish_reason != 'SAFETY' and retry2_finish_reason != 2:
-                                    print("[API] Retry 2 successful with BLOCK_ONLY_HIGH!")
-                                    if hasattr(retry2_response, 'text') and retry2_response.text:
-                                        return retry2_response.text
-                                    # Try parts
-                                    if hasattr(retry2_candidate, 'content') and retry2_candidate.content:
-                                        if hasattr(retry2_candidate.content, 'parts') and retry2_candidate.content.parts:
-                                            if len(retry2_candidate.content.parts) > 0:
-                                                part = retry2_candidate.content.parts[0]
-                                                if hasattr(part, 'text'):
-                                                    return part.text
-                                else:
-                                    print("[API] Retry 2 also blocked, trying Retry 3...")
+                            # Validate retry response
+                            retry2_text = self._extract_and_validate_response(retry2_response, "Retry 2")
+                            if retry2_text:
+                                print("[API] Retry 2 successful with BLOCK_ONLY_HIGH!")
+                                return retry2_text
                             else:
-                                print("[API] Retry 2 response invalid, trying Retry 3...")
+                                print("[API] Retry 2 failed validation, trying Retry 3...")
                         except Exception as retry2_error:
-                            print(f"[API] Retry 2 failed: {retry2_error}, trying Retry 3...")
+                            print(f"[API] Retry 2 exception: {retry2_error}, trying Retry 3...")
                         
                         # RETRY 3: Try WITHOUT safety_settings (let model use defaults - sometimes works better)
-                        # Use shorter timeout for retries (15 seconds)
-                        print("[API] Retry 3: Trying WITHOUT safety_settings (15s timeout)...")
+                        print("[API] Retry 3: Trying WITHOUT safety_settings...")
                         try:
                             # Try without safety_settings - some API keys/models work better this way
                             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
@@ -615,28 +597,15 @@ Output in English. Focus on technical and business aspects only."""
                                     # No safety_settings - let model use defaults
                                 )
                             
-                            # Check retry response
-                            if hasattr(retry3_response, 'candidates') and retry3_response.candidates:
-                                retry3_candidate = retry3_response.candidates[0]
-                                retry3_finish_reason = getattr(retry3_candidate, 'finish_reason', None)
-                                
-                                if retry3_finish_reason != 'SAFETY' and retry3_finish_reason != 2:
-                                    print("[API] Retry 3 successful without safety_settings!")
-                                    if hasattr(retry3_response, 'text') and retry3_response.text:
-                                        return retry3_response.text
-                                    # Try parts
-                                    if hasattr(retry3_candidate, 'content') and retry3_candidate.content:
-                                        if hasattr(retry3_candidate.content, 'parts') and retry3_candidate.content.parts:
-                                            if len(retry3_candidate.content.parts) > 0:
-                                                part = retry3_candidate.content.parts[0]
-                                                if hasattr(part, 'text'):
-                                                    return part.text
-                                else:
-                                    print("[API] Retry 3 also blocked, trying Retry 4...")
+                            # Validate retry response
+                            retry3_text = self._extract_and_validate_response(retry3_response, "Retry 3")
+                            if retry3_text:
+                                print("[API] Retry 3 successful without safety_settings!")
+                                return retry3_text
                             else:
-                                print("[API] Retry 3 response invalid, trying Retry 4...")
+                                print("[API] Retry 3 failed validation, trying Retry 4...")
                         except Exception as retry3_error:
-                            print(f"[API] Retry 3 failed: {retry3_error}, trying Retry 4...")
+                            print(f"[API] Retry 3 exception: {retry3_error}, trying Retry 4...")
                         
                         # RETRY 4: Try with minimal generation config and BLOCK_ONLY_HIGH
                         print("[API] Retry 4: Trying with minimal config and BLOCK_ONLY_HIGH...")
@@ -661,28 +630,15 @@ Output in English. Focus on technical and business aspects only."""
                                     safety_settings=fallback_settings if fallback_settings else None
                                 )
                             
-                            # Check retry response
-                            if hasattr(retry4_response, 'candidates') and retry4_response.candidates:
-                                retry4_candidate = retry4_response.candidates[0]
-                                retry4_finish_reason = getattr(retry4_candidate, 'finish_reason', None)
-                                
-                                if retry4_finish_reason != 'SAFETY' and retry4_finish_reason != 2:
-                                    print("[API] Retry 4 successful with minimal config!")
-                                    if hasattr(retry4_response, 'text') and retry4_response.text:
-                                        return retry4_response.text
-                                    # Try parts
-                                    if hasattr(retry4_candidate, 'content') and retry4_candidate.content:
-                                        if hasattr(retry4_candidate.content, 'parts') and retry4_candidate.content.parts:
-                                            if len(retry4_candidate.content.parts) > 0:
-                                                part = retry4_candidate.content.parts[0]
-                                                if hasattr(part, 'text'):
-                                                    return part.text
-                                else:
-                                    print("[API] Retry 4 also blocked, trying Retry 5 with alternative model...")
+                            # Validate retry response
+                            retry4_text = self._extract_and_validate_response(retry4_response, "Retry 4")
+                            if retry4_text:
+                                print("[API] Retry 4 successful with minimal config!")
+                                return retry4_text
                             else:
-                                print("[API] Retry 4 response invalid, trying Retry 5 with alternative model...")
+                                print("[API] Retry 4 failed validation, trying Retry 5 with alternative model...")
                         except Exception as retry4_error:
-                            print(f"[API] Retry 4 failed: {retry4_error}, trying Retry 5 with alternative model...")
+                            print(f"[API] Retry 4 exception: {retry4_error}, trying Retry 5 with alternative model...")
                         
                         # RETRY 5: Try with alternative model (gemini-1.5-flash) - sometimes different models have different safety filter behavior
                         print(f"[API] Retry 5: Trying with alternative model '{fallback_model}'...")
@@ -704,28 +660,15 @@ Output in English. Focus on technical and business aspects only."""
                                     safety_settings=fallback_settings if fallback_settings else None
                                 )
                             
-                            # Check retry response
-                            if hasattr(retry5_response, 'candidates') and retry5_response.candidates:
-                                retry5_candidate = retry5_response.candidates[0]
-                                retry5_finish_reason = getattr(retry5_candidate, 'finish_reason', None)
-                                
-                                if retry5_finish_reason != 'SAFETY' and retry5_finish_reason != 2:
-                                    print(f"[API] Retry 5 successful with alternative model '{fallback_model}'!")
-                                    if hasattr(retry5_response, 'text') and retry5_response.text:
-                                        return retry5_response.text
-                                    # Try parts
-                                    if hasattr(retry5_candidate, 'content') and retry5_candidate.content:
-                                        if hasattr(retry5_candidate.content, 'parts') and retry5_candidate.content.parts:
-                                            if len(retry5_candidate.content.parts) > 0:
-                                                part = retry5_candidate.content.parts[0]
-                                                if hasattr(part, 'text'):
-                                                    return part.text
-                                else:
-                                    print(f"[API] Retry 5 also blocked with '{fallback_model}' - all retries exhausted")
+                            # Validate retry response
+                            retry5_text = self._extract_and_validate_response(retry5_response, f"Retry 5 ({fallback_model})")
+                            if retry5_text:
+                                print(f"[API] Retry 5 successful with alternative model '{fallback_model}'!")
+                                return retry5_text
                             else:
-                                print(f"[API] Retry 5 response invalid with '{fallback_model}' - all retries exhausted")
+                                print(f"[API] Retry 5 failed validation with '{fallback_model}' - all retries exhausted")
                         except Exception as retry5_error:
-                            print(f"[API] Retry 5 failed with '{fallback_model}': {retry5_error} - all retries exhausted")
+                            print(f"[API] Retry 5 exception with '{fallback_model}': {retry5_error} - all retries exhausted")
                         
                         # If all retries fail, provide error message
                         # IMPORTANT: Don't mention "API key" in error message to avoid triggering wrong error handler
@@ -735,44 +678,45 @@ Output in English. Focus on technical and business aspects only."""
                     else:
                         raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
                 
-                # Handle other blocking reasons
-                if finish_reason and finish_reason != 1:  # 1 = STOP (success)
+                # If we get here, finish_reason is not SAFETY, so extract and validate response
+                response_text = self._extract_and_validate_response(response, "Initial request")
+                if response_text:
+                    return response_text
+                
+                # If validation failed, check finish_reason for other blocking reasons
+                finish_reason_str = str(finish_reason) if finish_reason is not None else None
+                finish_reason_int = None
+                try:
+                    if finish_reason is not None:
+                        if isinstance(finish_reason, int):
+                            finish_reason_int = finish_reason
+                        elif isinstance(finish_reason, str) and finish_reason.isdigit():
+                            finish_reason_int = int(finish_reason)
+                except:
+                    pass
+                
+                if finish_reason_int and finish_reason_int != 1:  # 1 = STOP (success)
                     reason_map = {
                         2: 'SAFETY',
                         3: 'RECITATION',
                         4: 'OTHER',
                         5: 'MAX_TOKENS'
                     }
-                    reason_name = reason_map.get(finish_reason, f'REASON_{finish_reason}')
+                    reason_name = reason_map.get(finish_reason_int, f'REASON_{finish_reason_int}')
                     raise Exception(f"Gemini API response blocked: {reason_name}. Please try rephrasing your scenario.")
-                
-                # Now safely try to get text (only if finish_reason is OK)
-                # Try response.text first (easiest)
-                try:
-                    if hasattr(response, 'text') and response.text:
-                        return response.text
-                except Exception:
-                    # If response.text fails, try accessing parts directly
-                    pass
-                
-                # Try accessing text from candidate parts
-                if hasattr(candidate, 'content') and candidate.content:
-                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                        if len(candidate.content.parts) > 0:
-                            part = candidate.content.parts[0]
-                            if hasattr(part, 'text'):
-                                return part.text
-                            elif isinstance(part, dict) and 'text' in part:
-                                return part['text']
                 
                 # If we get here, no text was found
                 raise Exception("Empty response from Gemini API - no text content returned")
             
             # Fallback: try response.text if no candidates structure
             elif hasattr(response, 'text') and response.text:
-                return response.text
-            else:
-                raise Exception("Empty response from Gemini API - no candidates or text returned")
+                text = response.text.strip()
+                if text:
+                    print("[API] Extracted text via fallback (no candidates structure)")
+                    return text
+            
+            # If we get here, no valid response was found
+            raise Exception("Empty response from Gemini API - no candidates or text returned")
                 
         except Exception as e:
             error_msg = str(e)
@@ -802,6 +746,103 @@ Output in English. Focus on technical and business aspects only."""
                 raise Exception(f"Content was blocked by Gemini safety filters. Please try rephrasing your scenario. Error: {error_msg}")
             else:
                 raise Exception(f"Gemini API error: {error_msg}")
+    
+    def _extract_and_validate_response(self, response, attempt_name="Response"):
+        """Extract and validate response text - returns None if invalid or blocked"""
+        try:
+            if not hasattr(response, 'candidates') or not response.candidates:
+                print(f"[API] {attempt_name}: No candidates in response")
+                return None
+            
+            candidate = response.candidates[0]
+            finish_reason = getattr(candidate, 'finish_reason', None)
+            
+            # Normalize finish_reason to handle all formats
+            finish_reason_str = str(finish_reason) if finish_reason is not None else None
+            finish_reason_int = None
+            try:
+                if finish_reason is not None:
+                    if isinstance(finish_reason, int):
+                        finish_reason_int = finish_reason
+                    elif isinstance(finish_reason, str) and finish_reason.isdigit():
+                        finish_reason_int = int(finish_reason)
+            except:
+                pass
+            
+            # Check if finish_reason indicates safety block (handle all formats)
+            is_safety_block = (
+                finish_reason == 'SAFETY' or 
+                finish_reason == 2 or 
+                finish_reason_str == 'SAFETY' or
+                finish_reason_str == '2' or
+                finish_reason_int == 2
+            )
+            
+            if is_safety_block:
+                print(f"[API] {attempt_name}: Blocked by safety filters (finish_reason: {finish_reason})")
+                return None
+            
+            # Check if finish_reason is STOP (success) - 1 or 'STOP'
+            is_success = (
+                finish_reason == 1 or
+                finish_reason == 'STOP' or
+                finish_reason_str == '1' or
+                finish_reason_str == 'STOP' or
+                finish_reason_int == 1
+            )
+            
+            if not is_success:
+                # Other finish reasons (RECITATION, MAX_TOKENS, etc.) might still have valid text
+                print(f"[API] {attempt_name}: Warning - finish_reason is {finish_reason} (not STOP), but attempting to extract text")
+            
+            # Extract text - try multiple methods
+            text = None
+            
+            # Method 1: response.text
+            try:
+                if hasattr(response, 'text') and response.text:
+                    text = response.text.strip()
+                    if text:
+                        print(f"[API] {attempt_name}: Extracted text via response.text ({len(text)} chars)")
+                        return text
+            except Exception as e:
+                print(f"[API] {attempt_name}: Failed to get response.text: {e}")
+            
+            # Method 2: candidate.content.parts
+            try:
+                if hasattr(candidate, 'content') and candidate.content:
+                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                        if len(candidate.content.parts) > 0:
+                            part = candidate.content.parts[0]
+                            if hasattr(part, 'text') and part.text:
+                                text = part.text.strip()
+                                if text:
+                                    print(f"[API] {attempt_name}: Extracted text via parts ({len(text)} chars)")
+                                    return text
+            except Exception as e:
+                print(f"[API] {attempt_name}: Failed to get text from parts: {e}")
+            
+            # Method 3: Try dict access
+            try:
+                if isinstance(candidate, dict) and 'content' in candidate:
+                    if 'parts' in candidate['content']:
+                        for part in candidate['content']['parts']:
+                            if isinstance(part, dict) and 'text' in part:
+                                text = part['text'].strip()
+                                if text:
+                                    print(f"[API] {attempt_name}: Extracted text via dict access ({len(text)} chars)")
+                                    return text
+            except Exception as e:
+                print(f"[API] {attempt_name}: Failed to get text via dict access: {e}")
+            
+            print(f"[API] {attempt_name}: No valid text found in response")
+            return None
+            
+        except Exception as e:
+            print(f"[API] {attempt_name}: Exception during validation: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     def _get_safety_settings(self):
         """Get safety settings with all filters disabled - returns None if cannot be created"""
