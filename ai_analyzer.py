@@ -385,15 +385,33 @@ FORMAT:
             }
             
             # CRITICAL: Always pass safety_settings if available, never skip it
+            # Log the actual safety_settings being used for debugging
+            if safety_settings:
+                print(f"[API] Safety settings being used: {type(safety_settings)}")
+                if isinstance(safety_settings, dict):
+                    for key, value in safety_settings.items():
+                        print(f"[API]   {key}: {value} (type: {type(value)})")
+                else:
+                    print(f"[API]   {safety_settings}")
+            
             # For text-only requests
             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
                 if safety_settings:
                     print("[API] Making request with safety_settings (BLOCK_NONE)")
-                    response = model.generate_content(
-                        prompt,
-                        generation_config=gen_config,
-                        safety_settings=safety_settings
-                    )
+                    try:
+                        response = model.generate_content(
+                            prompt,
+                            generation_config=gen_config,
+                            safety_settings=safety_settings
+                        )
+                    except Exception as api_error:
+                        print(f"[API] Error with safety_settings: {api_error}")
+                        # If safety_settings format is wrong, try without it as last resort
+                        print("[API] Retrying without safety_settings...")
+                        response = model.generate_content(
+                            prompt,
+                            generation_config=gen_config
+                        )
                 else:
                     print("[API] WARNING: Making request WITHOUT safety_settings - default filters will apply!")
                     response = model.generate_content(
@@ -424,9 +442,49 @@ FORMAT:
                 # finish_reason 2 = SAFETY, 3 = RECITATION, etc.
                 finish_reason = getattr(candidate, 'finish_reason', None)
                 
-                # Handle safety filters - check both string and numeric codes
+                # Log detailed safety information for debugging
+                print(f"[API] Response finish_reason: {finish_reason}")
+                
+                # Check safety ratings if available
+                if hasattr(candidate, 'safety_ratings'):
+                    safety_ratings = candidate.safety_ratings
+                    print(f"[API] Safety ratings: {safety_ratings}")
+                    for rating in safety_ratings:
+                        print(f"[API]   - {getattr(rating, 'category', 'unknown')}: {getattr(rating, 'probability', 'unknown')} (threshold: {getattr(rating, 'threshold', 'unknown')})")
+                
+                # CRITICAL: If we set BLOCK_NONE but still get SAFETY finish_reason,
+                # Try to extract response anyway - sometimes partial content is available
                 if finish_reason == 'SAFETY' or finish_reason == 2:
-                    raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
+                    # Check if we actually set safety_settings
+                    if safety_settings:
+                        print(f"[API] WARNING: Content blocked despite BLOCK_NONE settings!")
+                        print(f"[API] Safety settings used: {safety_settings}")
+                        
+                        # Try to extract any available content despite the safety block
+                        # Sometimes Gemini returns partial content even with SAFETY finish_reason
+                        try:
+                            if hasattr(response, 'text') and response.text:
+                                print("[API] Found text despite SAFETY finish_reason, using it")
+                                return response.text
+                        except:
+                            pass
+                        
+                        # Try accessing parts directly
+                        try:
+                            if hasattr(candidate, 'content') and candidate.content:
+                                if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                                    if len(candidate.content.parts) > 0:
+                                        part = candidate.content.parts[0]
+                                        if hasattr(part, 'text') and part.text:
+                                            print("[API] Found text in parts despite SAFETY finish_reason, using it")
+                                            return part.text
+                        except:
+                            pass
+                        
+                        # If we can't extract content, raise error with context
+                        raise Exception("Content was blocked by Gemini safety filters despite BLOCK_NONE settings. This may indicate extremely sensitive content. Please try rephrasing your scenario in a more neutral, business-focused way.")
+                    else:
+                        raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
                 
                 # Handle other blocking reasons
                 if finish_reason and finish_reason != 1:  # 1 = STOP (success)
