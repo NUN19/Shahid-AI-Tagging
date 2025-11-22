@@ -529,35 +529,38 @@
         let selectedFiles = [];
         let mindMapLoaded = false;
 
-        // Check if mind map is loaded on page load
+        // Check if mind map is loaded on page load (for UI updates only)
+        // NOTE: Server-side check in index() route already handles redirects
+        // This is just for updating the UI with mind map info
         async function checkMindMap() {
             try {
                 const response = await fetch('/api/check-mindmap');
                 const result = await response.json();
                 
-                if (!result.loaded) {
-                    // Redirect to setup if no mind map loaded
-                    window.location.href = '/setup';
-                    return;
-                }
-                
-                mindMapLoaded = true;
-                // Show mind map info
-                if (result.filename) {
-                    document.getElementById('mindMapName').textContent = result.filename;
-                    if (result.tags_count) {
-                        document.getElementById('mindMapStatus').textContent = `📊 Mind Map: ${result.tags_count} tags loaded`;
+                if (result.loaded) {
+                    mindMapLoaded = true;
+                    // Show mind map info
+                    if (result.filename) {
+                        document.getElementById('mindMapName').textContent = result.filename;
+                        if (result.tags_count) {
+                            document.getElementById('mindMapStatus').textContent = `📊 Mind Map: ${result.tags_count} tags loaded`;
+                        }
                     }
+                } else {
+                    // Mind map not loaded - but don't redirect here
+                    // Server-side check in index() route already handled redirect
+                    // If we're on this page, it means server found the mind map
+                    console.log('Mind map check: not loaded (but server already validated)');
                 }
             } catch (error) {
                 console.error('Error checking mind map:', error);
-                // Redirect to setup on error
-                window.location.href = '/setup';
+                // Don't redirect on error - server already handled it
             }
         }
 
-        // Check on page load
-        checkMindMap();
+        // Check on page load (non-blocking, just for UI updates)
+        // Delay slightly to ensure page is fully loaded
+        setTimeout(checkMindMap, 100);
 
         // Handle file selection
         fileInput.addEventListener('change', (e) => {

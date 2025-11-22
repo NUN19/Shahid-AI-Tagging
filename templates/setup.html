@@ -576,10 +576,12 @@
                 document.getElementById('loading').classList.remove('active');
                 showSuccess(t.successProcessing);
                 
-                // Redirect to main app after 1 second
+                // Wait a bit longer to ensure session is saved server-side
+                // Then redirect to main app
                 setTimeout(() => {
+                    // Force a full page reload to ensure session is established
                     window.location.href = '/';
-                }, 1000);
+                }, 1500);
 
             } catch (error) {
                 document.getElementById('loading').classList.remove('active');

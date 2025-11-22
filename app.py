@@ -100,10 +100,22 @@ def get_mind_map_parser():
             
             if len(parsed_data) == 0:
                 print("Error: No valid sheets found in mind map data")
+                # Don't return None immediately - check if we have any data at all
+                # This handles the case where all sheets are empty but data was uploaded
+                if len(data_dict) > 0:
+                    print(f"Warning: {len(data_dict)} sheets in data but all are empty or invalid")
                 return None
             
-            mind_map_parser = MindMapParser(data_dict=parsed_data)
-            return mind_map_parser
+            # Create parser and cache it globally for this session
+            try:
+                mind_map_parser = MindMapParser(data_dict=parsed_data)
+                print(f"[Parser] Successfully created parser with {len(parsed_data)} sheets")
+                return mind_map_parser
+            except Exception as parse_error:
+                print(f"Error creating MindMapParser: {parse_error}")
+                import traceback
+                traceback.print_exc()
+                return None
         except Exception as e:
             print(f"Error loading mind map from storage: {e}")
             import traceback
@@ -142,9 +154,19 @@ def get_ai_analyzer():
 @app.route('/')
 def index():
     """Main page - redirect to setup if no mind map loaded"""
+    # Ensure session is initialized
+    if '_id' not in session:
+        session_id = secrets.token_hex(16)
+        session['_id'] = session_id
+        session.permanent = True
+        session.modified = True
+    
     # Check if mind map is loaded
     parser = get_mind_map_parser()
     if not parser:
+        # Clear any cached parser
+        global mind_map_parser
+        mind_map_parser = None
         return render_template('setup.html')
     return render_template('index.html')
 
@@ -172,11 +194,37 @@ def upload_mindmap():
         if len(mind_map_data) == 0:
             return jsonify({'error': 'Mind map data is empty. Please ensure the Excel file has data.'}), 400
         
+        # PRE-VALIDATE: Check if we have at least one non-empty sheet before storing
+        has_valid_sheet = False
+        for sheet_name, sheet_data in mind_map_data.items():
+            if isinstance(sheet_data, list) and len(sheet_data) > 0:
+                # Check if sheet has at least one row with data
+                for row in sheet_data:
+                    if isinstance(row, dict) and len(row) > 0:
+                        # Check if row has at least one non-empty value
+                        if any(str(v).strip() and str(v).lower() not in ['nan', 'none', ''] for v in row.values()):
+                            has_valid_sheet = True
+                            break
+                    if has_valid_sheet:
+                        break
+            if has_valid_sheet:
+                break
+        
+        if not has_valid_sheet:
+            return jsonify({
+                'error': 'No valid data found',
+                'details': 'The Excel file was processed but all sheets are empty or contain no valid data.',
+                'solution': 'Please ensure your Excel file has at least one sheet with data rows containing information.'
+            }), 400
+        
         # Store mind map data server-side (not in cookie to avoid size limits)
         # Get or create session ID
-        session_id = session.get('_id', secrets.token_hex(16))
-        session['_id'] = session_id
+        session_id = session.get('_id')
+        if not session_id:
+            session_id = secrets.token_hex(16)
+            session['_id'] = session_id
         session.permanent = True
+        session.modified = True  # Mark session as modified to ensure it's saved
         
         # Store in server-side storage (avoids cookie size limit of 4KB)
         mind_map_storage[session_id] = {
@@ -188,14 +236,23 @@ def upload_mindmap():
         # Only store filename in session cookie (small)
         session['mind_map_filename'] = data.get('filename', 'uploaded_mind_map.xlsx')
         
+        # Clear cached parser to force fresh load
+        global mind_map_parser
+        mind_map_parser = None
+        
         # Verify it can be parsed
         try:
+            # Force session to be saved before parsing
+            session.permanent = True
+            session.modified = True
+            
             parser = get_mind_map_parser()
             if not parser:
                 # Clean up storage if parsing failed
                 session_id = session.get('_id')
                 if session_id and session_id in mind_map_storage:
                     del mind_map_storage[session_id]
+                session.pop('mind_map_filename', None)
                 return jsonify({
                     'error': 'Failed to parse mind map data',
                     'details': 'The uploaded Excel file could not be processed. Please check the file format. Ensure at least one sheet has data.',
@@ -213,17 +270,24 @@ def upload_mindmap():
                 if session_id and session_id in mind_map_storage:
                     del mind_map_storage[session_id]
                 session.pop('mind_map_filename', None)
+                # Clear cached parser
+                mind_map_parser = None
                 return jsonify({
                     'error': 'No valid data found',
                     'details': 'The Excel file was processed but contains no valid data. All sheets appear to be empty or have no extractable tags.',
                     'solution': 'Please ensure your Excel file has at least one sheet with data rows containing tag information.'
                 }), 400
             
+            # Ensure session is saved and parser is cached
+            session.permanent = True
+            session.modified = True
+            
             return jsonify({
                 'success': True,
                 'filename': session.get('mind_map_filename', 'uploaded_mind_map.xlsx'),
                 'sheets': sheets_count,
-                'tags': total_tags
+                'tags': total_tags,
+                'session_id': session.get('_id')  # Return session ID for debugging
             })
         except Exception as parse_error:
             # Clean up storage if parsing failed
@@ -252,15 +316,26 @@ def upload_mindmap():
 @app.route('/api/check-mindmap', methods=['GET'])
 def check_mindmap():
     """Check if mind map is loaded for current session"""
+    # Ensure session is initialized
+    if '_id' not in session:
+        session_id = secrets.token_hex(16)
+        session['_id'] = session_id
+        session.permanent = True
+        session.modified = True
+    
     parser = get_mind_map_parser()
     if parser:
         tags = parser.get_all_tags()
         return jsonify({
             'loaded': True,
             'filename': session.get('mind_map_filename', 'Mind Map'),
-            'tags_count': len(tags)
+            'tags_count': len(tags),
+            'session_id': session.get('_id')  # For debugging
         })
-    return jsonify({'loaded': False})
+    return jsonify({
+        'loaded': False,
+        'session_id': session.get('_id')  # For debugging
+    })
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze_scenario():
