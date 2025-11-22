@@ -29,11 +29,22 @@ class AIAnalyzer:
                 raise ValueError("GEMINI_API_KEY not found. Get a free key at: https://makersuite.google.com/app/apikey")
             try:
                 import google.generativeai as genai
-                from google.generativeai.types import HarmCategory, HarmBlockThreshold
                 genai.configure(api_key=api_key)
                 self.genai = genai
-                self.HarmCategory = HarmCategory
-                self.HarmBlockThreshold = HarmBlockThreshold
+                # Try to import safety enums with fallback
+                try:
+                    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                    self.HarmCategory = HarmCategory
+                    self.HarmBlockThreshold = HarmBlockThreshold
+                except (ImportError, AttributeError):
+                    # Fallback: use genai.types if direct import fails
+                    try:
+                        self.HarmCategory = genai.types.HarmCategory
+                        self.HarmBlockThreshold = genai.types.HarmBlockThreshold
+                    except AttributeError:
+                        # Last resort: set to None and handle in _call_gemini
+                        self.HarmCategory = None
+                        self.HarmBlockThreshold = None
             except ImportError:
                 raise ImportError("Google Generative AI package not installed. Run: pip install google-generativeai")
         
@@ -257,33 +268,92 @@ FORMAT:
                 raise
             
             # DISABLE ALL SAFETY FILTERS - Set to BLOCK_NONE for all categories
-            safety_settings = {
-                self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_NONE,
-                self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_NONE,
-                self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_NONE,
-                self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_NONE,
+            # Try multiple approaches to ensure it works on all platforms
+            safety_settings = None
+            
+            if self.HarmCategory and self.HarmBlockThreshold:
+                try:
+                    # Method 1: Use enum values directly (preferred)
+                    safety_settings = {
+                        self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_NONE,
+                        self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_NONE,
+                        self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_NONE,
+                        self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_NONE,
+                    }
+                    print("[API] Safety filters disabled using enum values")
+                except (AttributeError, TypeError) as e:
+                    print(f"[API] Enum method failed: {e}, trying alternative...")
+                    try:
+                        # Method 2: Use integer values (BLOCK_NONE = 0)
+                        safety_settings = {
+                            self.HarmCategory.HARM_CATEGORY_HARASSMENT: 0,
+                            self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: 0,
+                            self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: 0,
+                            self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: 0,
+                        }
+                        print("[API] Safety filters disabled using integer values")
+                    except Exception as e2:
+                        print(f"[API] Integer method failed: {e2}, trying string values...")
+                        try:
+                            # Method 3: Use string values
+                            safety_settings = [
+                                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                            ]
+                            print("[API] Safety filters disabled using string values")
+                        except Exception as e3:
+                            print(f"[API] All safety setting methods failed: {e3}, proceeding without safety settings")
+                            safety_settings = None
+            else:
+                print("[API] HarmCategory/HarmBlockThreshold not available, trying direct import...")
+                try:
+                    # Last resort: try importing directly in the method
+                    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                    safety_settings = {
+                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                    }
+                    print("[API] Safety filters disabled using direct import")
+                except Exception as e:
+                    print(f"[API] Direct import also failed: {e}, proceeding without safety settings")
+                    safety_settings = None
+            
+            # Prepare generation config
+            gen_config = {
+                "temperature": 0.3,
+                "max_output_tokens": 1500,  # Reduced to save tokens
             }
             
             # For text-only requests
             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                response = model.generate_content(
-                    prompt,
-                    generation_config={
-                        "temperature": 0.3,
-                        "max_output_tokens": 1500,  # Reduced to save tokens
-                    },
-                    safety_settings=safety_settings
-                )
+                if safety_settings:
+                    response = model.generate_content(
+                        prompt,
+                        generation_config=gen_config,
+                        safety_settings=safety_settings
+                    )
+                else:
+                    response = model.generate_content(
+                        prompt,
+                        generation_config=gen_config
+                    )
             else:
                 # For requests with images, use content_parts
-                response = model.generate_content(
-                    content_parts,
-                    generation_config={
-                        "temperature": 0.3,
-                        "max_output_tokens": 1500,  # Reduced to save tokens
-                    },
-                    safety_settings=safety_settings
-                )
+                if safety_settings:
+                    response = model.generate_content(
+                        content_parts,
+                        generation_config=gen_config,
+                        safety_settings=safety_settings
+                    )
+                else:
+                    response = model.generate_content(
+                        content_parts,
+                        generation_config=gen_config
+                    )
             
             # Check response structure - handle safety filters FIRST before accessing text
             if hasattr(response, 'candidates') and response.candidates:
