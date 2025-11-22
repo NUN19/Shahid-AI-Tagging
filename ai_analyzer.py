@@ -295,7 +295,8 @@ FORMAT:
                     generation_config={
                         "temperature": 0.3,
                         "max_output_tokens": 1500,  # Reduced to save tokens
-                    }
+                    },
+                    safety_settings=safety_settings  # Apply safety settings to allow all business content
                 )
             else:
                 # For requests with images, use content_parts
@@ -304,7 +305,8 @@ FORMAT:
                     generation_config={
                         "temperature": 0.3,
                         "max_output_tokens": 1500,  # Reduced to save tokens
-                    }
+                    },
+                    safety_settings=safety_settings  # Apply safety settings to allow all business content
                 )
             
             # Check response structure - handle safety filters FIRST before accessing text
