@@ -40,9 +40,10 @@ Session(app)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['SESSION_FOLDER'], exist_ok=True)
 
-# Server-side storage for mind map data (keyed by session ID)
-# This avoids cookie size limits
-mind_map_storage = {}
+# Server-side storage folder for mind map data (keyed by session ID)
+# This avoids cookie size limits and persists across workers
+MIND_MAP_STORAGE_DIR = 'mind_map_storage'
+os.makedirs(MIND_MAP_STORAGE_DIR, exist_ok=True)
 
 # Global components (will be session-based)
 mind_map_parser = None
@@ -50,7 +51,7 @@ ai_analyzer = None
 
 def get_mind_map_parser():
     """Get or create mind map parser for current session"""
-    global mind_map_parser, mind_map_storage
+    global mind_map_parser
     
     # Get session ID
     session_id = session.get('_id', session.sid if hasattr(session, 'sid') else None)
@@ -58,11 +59,21 @@ def get_mind_map_parser():
         # Generate session ID if not exists
         session_id = secrets.token_hex(16)
         session['_id'] = session_id
+        session.permanent = True
+        session.modified = True
+        print(f"[Parser] Generated new session ID: {session_id}")
+    else:
+        print(f"[Parser] Using existing session ID: {session_id}")
     
-    # Check server-side storage (avoids cookie size limits)
-    if session_id in mind_map_storage:
+    # Check file-based storage (persists across workers)
+    storage_file = os.path.join(MIND_MAP_STORAGE_DIR, f"{session_id}.json")
+    print(f"[Parser] Checking storage file: {storage_file} (exists: {os.path.exists(storage_file)})")
+    if os.path.exists(storage_file):
         try:
-            data_dict = mind_map_storage[session_id]['data']
+            # Load from file
+            with open(storage_file, 'r', encoding='utf-8') as f:
+                storage_data = json.load(f)
+            data_dict = storage_data.get('data', {})
             
             # Validate data structure
             if not isinstance(data_dict, dict):
@@ -106,10 +117,11 @@ def get_mind_map_parser():
                     print(f"Warning: {len(data_dict)} sheets in data but all are empty or invalid")
                 return None
             
-            # Create parser and cache it globally for this session
+            # Create parser and cache it globally
+            # Note: In multi-worker setup, each worker has its own cache, but storage is shared
             try:
                 mind_map_parser = MindMapParser(data_dict=parsed_data)
-                print(f"[Parser] Successfully created parser with {len(parsed_data)} sheets")
+                print(f"[Parser] Successfully created parser with {len(parsed_data)} sheets for session {session_id}")
                 return mind_map_parser
             except Exception as parse_error:
                 print(f"Error creating MindMapParser: {parse_error}")
@@ -160,6 +172,9 @@ def index():
         session['_id'] = session_id
         session.permanent = True
         session.modified = True
+        print(f"[Index] Generated new session ID: {session_id}")
+    else:
+        print(f"[Index] Using existing session ID: {session.get('_id')}")
     
     # Check if mind map is loaded
     parser = get_mind_map_parser()
@@ -167,7 +182,9 @@ def index():
         # Clear any cached parser
         global mind_map_parser
         mind_map_parser = None
+        print(f"[Index] No parser found, redirecting to setup")
         return render_template('setup.html')
+    print(f"[Index] Parser found, rendering index page")
     return render_template('index.html')
 
 @app.route('/api/upload-mindmap', methods=['POST'])
@@ -226,12 +243,17 @@ def upload_mindmap():
         session.permanent = True
         session.modified = True  # Mark session as modified to ensure it's saved
         
-        # Store in server-side storage (avoids cookie size limit of 4KB)
-        mind_map_storage[session_id] = {
+        # Store in file-based storage (persists across workers, avoids cookie size limit)
+        storage_file = os.path.join(MIND_MAP_STORAGE_DIR, f"{session_id}.json")
+        storage_data = {
             'data': mind_map_data,
             'filename': data.get('filename', 'uploaded_mind_map.xlsx'),
             'timestamp': time.time()
         }
+        with open(storage_file, 'w', encoding='utf-8') as f:
+            json.dump(storage_data, f, ensure_ascii=False)
+        print(f"[Upload] Stored mind map data to {storage_file} for session {session_id}")
+        print(f"[Upload] Storage file exists: {os.path.exists(storage_file)}")
         
         # Only store filename in session cookie (small)
         session['mind_map_filename'] = data.get('filename', 'uploaded_mind_map.xlsx')
@@ -250,8 +272,10 @@ def upload_mindmap():
             if not parser:
                 # Clean up storage if parsing failed
                 session_id = session.get('_id')
-                if session_id and session_id in mind_map_storage:
-                    del mind_map_storage[session_id]
+                if session_id:
+                    storage_file = os.path.join(MIND_MAP_STORAGE_DIR, f"{session_id}.json")
+                    if os.path.exists(storage_file):
+                        os.remove(storage_file)
                 session.pop('mind_map_filename', None)
                 return jsonify({
                     'error': 'Failed to parse mind map data',
@@ -267,8 +291,10 @@ def upload_mindmap():
             if sheets_count == 0 or total_tags == 0:
                 # Clean up storage if no valid data
                 session_id = session.get('_id')
-                if session_id and session_id in mind_map_storage:
-                    del mind_map_storage[session_id]
+                if session_id:
+                    storage_file = os.path.join(MIND_MAP_STORAGE_DIR, f"{session_id}.json")
+                    if os.path.exists(storage_file):
+                        os.remove(storage_file)
                 session.pop('mind_map_filename', None)
                 # Clear cached parser
                 mind_map_parser = None
@@ -292,8 +318,10 @@ def upload_mindmap():
         except Exception as parse_error:
             # Clean up storage if parsing failed
             session_id = session.get('_id')
-            if session_id and session_id in mind_map_storage:
-                del mind_map_storage[session_id]
+            if session_id:
+                storage_file = os.path.join(MIND_MAP_STORAGE_DIR, f"{session_id}.json")
+                if os.path.exists(storage_file):
+                    os.remove(storage_file)
             session.pop('mind_map_filename', None)
             import traceback
             error_trace = traceback.format_exc()
@@ -307,6 +335,16 @@ def upload_mindmap():
     except Exception as e:
         # Always return JSON, never HTML
         error_msg = str(e)
+        # Clean up storage on error
+        session_id = session.get('_id')
+        if session_id:
+            storage_file = os.path.join(MIND_MAP_STORAGE_DIR, f"{session_id}.json")
+            if os.path.exists(storage_file):
+                try:
+                    os.remove(storage_file)
+                except:
+                    pass
+        session.pop('mind_map_filename', None)
         return jsonify({
             'error': 'Upload failed',
             'details': error_msg,
@@ -417,15 +455,35 @@ def setup():
 
 # Cleanup old session data periodically (older than 24 hours)
 def cleanup_old_sessions():
-    """Remove old session data from storage"""
-    global mind_map_storage
+    """Remove old session data from file-based storage"""
+    if not os.path.exists(MIND_MAP_STORAGE_DIR):
+        return
+    
     current_time = time.time()
-    expired_sessions = []
-    for session_id, data in mind_map_storage.items():
-        if current_time - data.get('timestamp', 0) > 86400:  # 24 hours
-            expired_sessions.append(session_id)
-    for session_id in expired_sessions:
-        del mind_map_storage[session_id]
+    expired_files = []
+    
+    # Check all storage files
+    for filename in os.listdir(MIND_MAP_STORAGE_DIR):
+        if filename.endswith('.json'):
+            storage_file = os.path.join(MIND_MAP_STORAGE_DIR, filename)
+            try:
+                with open(storage_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    timestamp = data.get('timestamp', 0)
+                    if current_time - timestamp > 86400:  # 24 hours
+                        expired_files.append(storage_file)
+            except Exception as e:
+                print(f"Error reading storage file {filename}: {e}")
+                # Remove corrupted files
+                expired_files.append(storage_file)
+    
+    # Remove expired files
+    for storage_file in expired_files:
+        try:
+            os.remove(storage_file)
+            print(f"Cleaned up expired storage file: {storage_file}")
+        except Exception as e:
+            print(f"Error removing storage file {storage_file}: {e}")
 
 # Cleanup on startup
 cleanup_old_sessions()
