@@ -1167,6 +1167,7 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         
         lines = response_text.split('\n')
         current_section = None
+        reasoning_lines = []
         
         for line in lines:
             line = line.strip()
@@ -1185,6 +1186,18 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
                     tags = [t.strip() for t in tag_part.split(',')]
                     result['tags'] = [t for t in tags if t]
             
+            # Collect reasoning lines for tag extraction fallback
+            if 'reasoning' in line.lower() or 'المنطق' in line or 'الاستدلال' in line:
+                current_section = 'reasoning'
+                separator = ':' if ':' in line else ':'
+                if separator in line:
+                    reasoning_lines.append(line.split(separator, 1)[1].strip())
+                continue
+            
+            # Continue adding to current section
+            if current_section == 'reasoning':
+                reasoning_lines.append(line)
+            
             # Extract confidence (support both languages)
             if ('confidence' in line.lower() or 'الثقة' in line or 'مستوى الثقة' in line) and (':' in line or ':' in line):
                 separator = ':' if ':' in line else ':'
@@ -1202,12 +1215,12 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
                 else:
                     result['confidence'] = conf
             
-            # Extract reasoning (support both languages)
+            # Extract reasoning (support both English and Arabic)
             if 'reasoning' in line.lower() or 'المنطق' in line or 'الاستدلال' in line:
                 current_section = 'reasoning'
                 separator = ':' if ':' in line else ':'
                 if separator in line:
-                    result['reasoning'] = line.split(separator, 1)[1].strip()
+                    reasoning_lines.append(line.split(separator, 1)[1].strip())
                 continue
             
             # Extract mind map reference (support both languages)
@@ -1221,13 +1234,86 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
             
             # Continue adding to current section
             if current_section == 'reasoning':
-                result['reasoning'] += ' ' + line
+                reasoning_lines.append(line)
             elif current_section == 'reference':
                 result['mind_map_reference'] += ' ' + line
         
-        # Clean up
-        result['reasoning'] = result['reasoning'].strip()
+        # Join reasoning lines
+        result['reasoning'] = ' '.join(reasoning_lines).strip()
         result['mind_map_reference'] = result['mind_map_reference'].strip()
         
+        # FALLBACK: If no tags were found in explicit "Recommended Tag(s):" line,
+        # try to extract them from the reasoning section
+        if not result['tags'] and result['reasoning']:
+            tags_from_reasoning = self._extract_tags_from_reasoning(result['reasoning'])
+            if tags_from_reasoning:
+                result['tags'] = tags_from_reasoning
+                print(f"[Parser] Extracted {len(tags_from_reasoning)} tag(s) from reasoning: {tags_from_reasoning}")
+        
         return result
+    
+    def _extract_tags_from_reasoning(self, reasoning_text):
+        """Extract tag names from reasoning text when not explicitly listed"""
+        import re
+        
+        # Get all available tags from mind map for matching
+        all_tags = self.mind_map_parser.get_all_tags()
+        if not all_tags:
+            return []
+        
+        # Create a list of tag names (normalized for matching)
+        tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
+        
+        found_tags = []
+        
+        # Method 1: Look for quoted tag names (e.g., "Packages Benefits & Pricing")
+        quoted_pattern = r'"([^"]+)"'
+        quoted_matches = re.findall(quoted_pattern, reasoning_text)
+        for match in quoted_matches:
+            # Try exact match first
+            for tag in tag_names:
+                if tag.lower() == match.lower():
+                    if tag not in found_tags:
+                        found_tags.append(tag)
+                        break
+            # Try partial match if exact match failed
+            if not any(tag.lower() == match.lower() for tag in found_tags):
+                for tag in tag_names:
+                    if match.lower() in tag.lower() or tag.lower() in match.lower():
+                        if tag not in found_tags:
+                            found_tags.append(tag)
+                            break
+        
+        # Method 2: Look for tag names mentioned with "tag" keyword (e.g., "the tag 'X'")
+        tag_keyword_pattern = r"(?:tag|tags)\s+['""]([^'""]+)['""]"
+        tag_keyword_matches = re.findall(tag_keyword_pattern, reasoning_text, re.IGNORECASE)
+        for match in tag_keyword_matches:
+            for tag in tag_names:
+                if tag.lower() == match.lower():
+                    if tag not in found_tags:
+                        found_tags.append(tag)
+                        break
+        
+        # Method 3: Look for tag names mentioned with "matching" or "aligns" (e.g., "matching the tag X")
+        matching_pattern = r"(?:matching|matches|match|aligns?|corresponds?)\s+(?:the\s+)?tag\s+['""]([^'""]+)['""]"
+        matching_matches = re.findall(matching_pattern, reasoning_text, re.IGNORECASE)
+        for match in matching_matches:
+            for tag in tag_names:
+                if tag.lower() == match.lower():
+                    if tag not in found_tags:
+                        found_tags.append(tag)
+                        break
+        
+        # Method 4: Direct tag name mentions (case-insensitive partial matching)
+        # Only if we haven't found tags yet
+        if not found_tags:
+            reasoning_lower = reasoning_text.lower()
+            for tag in tag_names:
+                # Check if tag name appears in reasoning (with word boundaries for better matching)
+                tag_pattern = r'\b' + re.escape(tag.lower()) + r'\b'
+                if re.search(tag_pattern, reasoning_lower):
+                    if tag not in found_tags:
+                        found_tags.append(tag)
+        
+        return found_tags
 
