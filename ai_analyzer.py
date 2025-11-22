@@ -288,18 +288,15 @@ FORMAT:
             # DISABLE ALL SAFETY FILTERS - Get safety settings first
             safety_settings = self._get_safety_settings()
             
-            # Verify model is available and configure with safety settings
+            # Verify model is available - DON'T set safety_settings at model level (may cause conflicts)
+            # We'll only pass them in generate_content() calls
             try:
-                # Create model with safety settings configured at model level
+                model = self.genai.GenerativeModel(model_name)
+                print(f"[API] Using model: {model_name}")
                 if safety_settings:
-                    model = self.genai.GenerativeModel(
-                        model_name,
-                        safety_settings=safety_settings
-                    )
-                    print(f"[API] Using model: {model_name} with safety_settings configured at model level")
+                    print(f"[API] Safety settings will be applied in generate_content() call")
                 else:
-                    model = self.genai.GenerativeModel(model_name)
-                    print(f"[API] Using model: {model_name} (WARNING: no safety_settings available)")
+                    print(f"[API] WARNING: no safety_settings available")
                 print(f"[API] API key: {os.getenv('GEMINI_API_KEY')[:20]}...")
             except Exception as model_error:
                 error_msg = str(model_error)
@@ -329,24 +326,37 @@ FORMAT:
                 else:
                     print(f"[API]   {safety_settings}")
             
-            # Make request - safety_settings are configured at model level, so we don't need to pass them again
-            # But we'll pass them explicitly as well to ensure they're applied
-            print("[API] Making request with safety_settings configured (BLOCK_NONE)")
+            # Make request - ONLY pass safety_settings in generate_content (not at model level)
+            # This ensures they're applied correctly without conflicts
+            print("[API] Making request with safety_settings in generate_content() (BLOCK_NONE)")
             
             # For text-only requests
             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                response = model.generate_content(
-                    prompt,
-                    generation_config=gen_config,
-                    safety_settings=safety_settings if safety_settings else None
-                )
+                # CRITICAL: Always pass safety_settings explicitly in generate_content
+                if safety_settings:
+                    response = model.generate_content(
+                        prompt,
+                        generation_config=gen_config,
+                        safety_settings=safety_settings
+                    )
+                else:
+                    response = model.generate_content(
+                        prompt,
+                        generation_config=gen_config
+                    )
             else:
                 # For requests with images, use content_parts
-                response = model.generate_content(
-                    content_parts,
-                    generation_config=gen_config,
-                    safety_settings=safety_settings if safety_settings else None
-                )
+                if safety_settings:
+                    response = model.generate_content(
+                        content_parts,
+                        generation_config=gen_config,
+                        safety_settings=safety_settings
+                    )
+                else:
+                    response = model.generate_content(
+                        content_parts,
+                        generation_config=gen_config
+                    )
             
             # Check response structure - handle safety filters FIRST before accessing text
             if hasattr(response, 'candidates') and response.candidates:
@@ -395,22 +405,23 @@ FORMAT:
                         except:
                             pass
                         
-                        # RETRY: If blocked despite BLOCK_NONE, retry with original text (no neutralization)
-                        # Sometimes Gemini needs a retry even with BLOCK_NONE
-                        print("[API] Retrying with original text (safety filters should be disabled)...")
+                        # RETRY 1: Try with BLOCK_ONLY_HIGH as fallback (less restrictive than default)
+                        print("[API] Retry 1: Trying with BLOCK_ONLY_HIGH threshold...")
                         try:
-                            # Retry with exact same prompt - no changes
+                            # Create BLOCK_ONLY_HIGH settings as fallback
+                            fallback_settings = self._get_safety_settings_block_only_high()
+                            
                             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
                                 retry_response = model.generate_content(
                                     prompt,
                                     generation_config=gen_config,
-                                    safety_settings=safety_settings if safety_settings else None
+                                    safety_settings=fallback_settings if fallback_settings else safety_settings
                                 )
                             else:
                                 retry_response = model.generate_content(
                                     content_parts,
                                     generation_config=gen_config,
-                                    safety_settings=safety_settings if safety_settings else None
+                                    safety_settings=fallback_settings if fallback_settings else safety_settings
                                 )
                             
                             # Check retry response
@@ -419,7 +430,7 @@ FORMAT:
                                 retry_finish_reason = getattr(retry_candidate, 'finish_reason', None)
                                 
                                 if retry_finish_reason != 'SAFETY' and retry_finish_reason != 2:
-                                    print("[API] Retry successful!")
+                                    print("[API] Retry 1 successful with BLOCK_ONLY_HIGH!")
                                     if hasattr(retry_response, 'text') and retry_response.text:
                                         return retry_response.text
                                     # Try parts
@@ -430,13 +441,53 @@ FORMAT:
                                                 if hasattr(part, 'text'):
                                                     return part.text
                                 else:
-                                    print("[API] Retry also blocked - safety filters may not be properly disabled")
+                                    print("[API] Retry 1 also blocked, trying Retry 2...")
                             else:
-                                print("[API] Retry response invalid")
+                                print("[API] Retry 1 response invalid, trying Retry 2...")
                         except Exception as retry_error:
-                            print(f"[API] Retry failed: {retry_error}")
+                            print(f"[API] Retry 1 failed: {retry_error}, trying Retry 2...")
                         
-                        # If retry also fails, provide error message
+                        # RETRY 2: Try with exact same BLOCK_NONE settings again (sometimes API needs a second attempt)
+                        print("[API] Retry 2: Retrying with BLOCK_NONE settings again...")
+                        try:
+                            # Retry with exact same prompt and settings - no changes
+                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
+                                retry2_response = model.generate_content(
+                                    prompt,
+                                    generation_config=gen_config,
+                                    safety_settings=safety_settings
+                                )
+                            else:
+                                retry2_response = model.generate_content(
+                                    content_parts,
+                                    generation_config=gen_config,
+                                    safety_settings=safety_settings
+                                )
+                            
+                            # Check retry response
+                            if hasattr(retry2_response, 'candidates') and retry2_response.candidates:
+                                retry2_candidate = retry2_response.candidates[0]
+                                retry2_finish_reason = getattr(retry2_candidate, 'finish_reason', None)
+                                
+                                if retry2_finish_reason != 'SAFETY' and retry2_finish_reason != 2:
+                                    print("[API] Retry 2 successful!")
+                                    if hasattr(retry2_response, 'text') and retry2_response.text:
+                                        return retry2_response.text
+                                    # Try parts
+                                    if hasattr(retry2_candidate, 'content') and retry2_candidate.content:
+                                        if hasattr(retry2_candidate.content, 'parts') and retry2_candidate.content.parts:
+                                            if len(retry2_candidate.content.parts) > 0:
+                                                part = retry2_candidate.content.parts[0]
+                                                if hasattr(part, 'text'):
+                                                    return part.text
+                                else:
+                                    print("[API] Retry 2 also blocked - safety filters may not be properly disabled")
+                            else:
+                                print("[API] Retry 2 response invalid")
+                        except Exception as retry2_error:
+                            print(f"[API] Retry 2 failed: {retry2_error}")
+                        
+                        # If all retries fail, provide error message
                         raise Exception("Content was blocked by Gemini safety filters despite BLOCK_NONE settings. Please check that your API key has permissions to disable safety filters, or contact Google Cloud support.")
                     
                     else:
@@ -593,6 +644,42 @@ FORMAT:
                         safety_settings = None
         
         return safety_settings
+    
+    def _get_safety_settings_block_only_high(self):
+        """Get safety settings with BLOCK_ONLY_HIGH threshold (fallback if BLOCK_NONE doesn't work)"""
+        try:
+            # Try to use the same enums we have
+            if self.HarmCategory and self.HarmBlockThreshold:
+                try:
+                    # Use BLOCK_ONLY_HIGH instead of BLOCK_NONE
+                    return {
+                        self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                        self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                        self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                        self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                    }
+                except AttributeError:
+                    # Try direct import
+                    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                    return {
+                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                    }
+            else:
+                # Try direct import
+                from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                return {
+                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                }
+        except Exception as e:
+            print(f"[API] Failed to create BLOCK_ONLY_HIGH settings: {e}")
+            return None
+    
     def _neutralize_scenario_text(self, scenario_text):
         """Neutralize scenario text to avoid safety filter triggers while preserving meaning
         This is called BEFORE the first API call to prevent blocking proactively"""
