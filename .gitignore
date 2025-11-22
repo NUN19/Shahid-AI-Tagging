@@ -37,3 +37,6 @@ Thumbs.db
 # Logs
 *.log
 
+# Batch files (Windows scripts)
+*.bat
+
