@@ -204,26 +204,12 @@ FORMAT:
             
         except Exception as e:
             error_str = str(e)
-            # Log the actual error for debugging
-            print(f"[ERROR] Actual error: {error_str}")
-            print(f"[ERROR] Error type: {type(e).__name__}")
-            
             # Provide user-friendly error messages for Gemini
-            # Be more specific - only catch actual API key errors, not permission errors about safety settings
-            if ('API key' in error_str and ('invalid' in error_str.lower() or 'not found' in error_str.lower() or 'missing' in error_str.lower())) or \
-               ('403' in error_str and 'api key' in error_str.lower() and 'invalid' in error_str.lower()):
+            if 'API key' in error_str or 'permission' in error_str.lower() or '403' in error_str:
                 return {
                     'error': 'Invalid Gemini API Key',
-                    'details': 'The Gemini API key is invalid or not found.',
+                    'details': 'The Gemini API key is invalid or has insufficient permissions.',
                     'solution': 'Please check your GEMINI_API_KEY in the .env file. Get a free key at: https://makersuite.google.com/app/apikey',
-                    'full_error': error_str
-                }
-            elif '403' in error_str and ('permission' in error_str.lower() or 'forbidden' in error_str.lower()):
-                # This might be about safety settings permissions, not API key
-                return {
-                    'error': 'API Permission Issue',
-                    'details': f'The API request was denied. This might be related to safety filter settings. Error: {error_str}',
-                    'solution': 'Your API key may not have permission to disable safety filters. Try using the default safety settings, or check your API key permissions in Google Cloud Console.',
                     'full_error': error_str
                 }
             elif 'rate limit' in error_str.lower() or 'quota' in error_str.lower() or '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str:
@@ -304,28 +290,17 @@ FORMAT:
             
             # Verify model is available and configure with safety settings
             try:
-                # Check API key first
-                api_key = os.getenv('GEMINI_API_KEY')
-                if not api_key:
-                    raise Exception("GEMINI_API_KEY not found in environment variables. Please check your .env file.")
-                print(f"[API] API key loaded: {api_key[:20]}... (length: {len(api_key)})")
-                
                 # Create model with safety settings configured at model level
                 if safety_settings:
-                    try:
-                        model = self.genai.GenerativeModel(
-                            model_name,
-                            safety_settings=safety_settings
-                        )
-                        print(f"[API] Using model: {model_name} with safety_settings configured at model level")
-                    except Exception as safety_error:
-                        print(f"[API] WARNING: Failed to create model with safety_settings: {safety_error}")
-                        print("[API] Falling back to model without safety_settings configuration")
-                        model = self.genai.GenerativeModel(model_name)
-                        print(f"[API] Using model: {model_name} (safety_settings will be passed in generate_content)")
+                    model = self.genai.GenerativeModel(
+                        model_name,
+                        safety_settings=safety_settings
+                    )
+                    print(f"[API] Using model: {model_name} with safety_settings configured at model level")
                 else:
                     model = self.genai.GenerativeModel(model_name)
                     print(f"[API] Using model: {model_name} (WARNING: no safety_settings available)")
+                print(f"[API] API key: {os.getenv('GEMINI_API_KEY')[:20]}...")
             except Exception as model_error:
                 error_msg = str(model_error)
                 if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
@@ -513,13 +488,8 @@ FORMAT:
             # Better error handling for Gemini
             if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
                 raise Exception(f"Gemini model '{model_name}' not available. Error: {error_msg}")
-            elif "403" in error_msg:
-                # 403 could be API key issue OR permission issue with safety settings
-                if "api key" in error_msg.lower() and ("invalid" in error_msg.lower() or "not found" in error_msg.lower()):
-                    raise Exception(f"Gemini API key invalid. Please check your GEMINI_API_KEY in .env file. Error: {error_msg}")
-                else:
-                    # Might be permission issue with safety settings or other API permissions
-                    raise Exception(f"Gemini API permission denied. Error: {error_msg}")
+            elif "403" in error_msg or "permission" in error_msg.lower() or "API key" in error_msg.lower():
+                raise Exception(f"Gemini API key invalid or permission denied. Please check your GEMINI_API_KEY in .env file. Error: {error_msg}")
             elif ("429" in error_msg or 
                   "quota" in error_msg.lower() or 
                   "rate limit" in error_msg.lower() or 
@@ -621,7 +591,7 @@ FORMAT:
                     except Exception as e:
                         print(f"[API] CRITICAL ERROR: Cannot disable safety filters: {e}")
                         safety_settings = None
-            
+        
         return safety_settings
     def _neutralize_scenario_text(self, scenario_text):
         """Neutralize scenario text to avoid safety filter triggers while preserving meaning
