@@ -13,7 +13,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #0a0e27;
             min-height: 100vh;
             padding: 20px;
         }
@@ -21,10 +21,11 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: white;
+            background: #1a1f3a;
             border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
             overflow: hidden;
+            border: 1px solid #2a2f4a;
         }
 
         .header {
@@ -109,6 +110,7 @@
 
         .main-content {
             padding: 30px;
+            background: #1a1f3a;
         }
 
         .input-section {
@@ -119,7 +121,7 @@
             display: block;
             margin-bottom: 10px;
             font-weight: 600;
-            color: #333;
+            color: #e0e0e0;
             font-size: 1.1em;
         }
 
@@ -127,31 +129,38 @@
             width: 100%;
             min-height: 150px;
             padding: 15px;
-            border: 2px solid #e0e0e0;
+            border: 2px solid #2a2f4a;
             border-radius: 8px;
             font-size: 1em;
             font-family: inherit;
             resize: vertical;
             transition: border-color 0.3s;
+            background: #0f1429;
+            color: #e0e0e0;
         }
 
         .scenario-input:focus {
             outline: none;
             border-color: #667eea;
+            background: #14192e;
+        }
+
+        .scenario-input::placeholder {
+            color: #6b7280;
         }
 
         .file-upload-section {
             margin-top: 20px;
             padding: 20px;
-            background: #f8f9fa;
+            background: #0f1429;
             border-radius: 8px;
-            border: 2px dashed #ccc;
+            border: 2px dashed #2a2f4a;
             transition: all 0.3s;
         }
 
         .file-upload-section:hover {
             border-color: #667eea;
-            background: #f0f2ff;
+            background: #14192e;
         }
 
         .file-input-wrapper {
@@ -163,10 +172,12 @@
         .file-input {
             width: 100%;
             padding: 12px;
-            border: 1px solid #ddd;
+            border: 1px solid #2a2f4a;
             border-radius: 6px;
             font-size: 1em;
             cursor: pointer;
+            background: #0f1429;
+            color: #e0e0e0;
         }
 
         .file-list {
@@ -177,14 +188,15 @@
         }
 
         .file-item {
-            background: white;
+            background: #0f1429;
             padding: 8px 15px;
             border-radius: 6px;
-            border: 1px solid #ddd;
+            border: 1px solid #2a2f4a;
             display: flex;
             align-items: center;
             gap: 10px;
             font-size: 0.9em;
+            color: #e0e0e0;
         }
 
         .file-item .remove-btn {
@@ -234,6 +246,7 @@
             display: none;
             text-align: center;
             padding: 20px;
+            color: #e0e0e0;
         }
 
         .loading.active {
@@ -241,7 +254,7 @@
         }
 
         .spinner {
-            border: 4px solid #f3f3f3;
+            border: 4px solid #2a2f4a;
             border-top: 4px solid #667eea;
             border-radius: 50%;
             width: 40px;
@@ -265,11 +278,12 @@
         }
 
         .result-card {
-            background: #f8f9fa;
+            background: #0f1429;
             border-radius: 8px;
             padding: 25px;
             margin-bottom: 20px;
             border-left: 5px solid #667eea;
+            border: 1px solid #2a2f4a;
         }
 
         .result-card h3 {
@@ -318,21 +332,23 @@
         }
 
         .reasoning-box {
-            background: white;
+            background: #14192e;
             padding: 15px;
             border-radius: 6px;
             margin-top: 15px;
             line-height: 1.6;
-            color: #555;
+            color: #d0d0d0;
+            border: 1px solid #2a2f4a;
         }
 
         .reference-box {
-            background: #e3f2fd;
+            background: #1a2340;
             padding: 15px;
             border-radius: 6px;
             margin-top: 15px;
             font-size: 0.9em;
-            color: #1976d2;
+            color: #8bb4ff;
+            border: 1px solid #2a3f5a;
         }
 
         .error-message {
@@ -347,11 +363,11 @@
         .full-response {
             margin-top: 20px;
             padding: 15px;
-            background: white;
+            background: #0f1429;
             border-radius: 6px;
-            border: 1px solid #ddd;
+            border: 1px solid #2a2f4a;
             font-size: 0.9em;
-            color: #666;
+            color: #b0b0b0;
             white-space: pre-wrap;
         }
 
@@ -431,12 +447,12 @@
         </div>
 
         <div class="main-content">
-            <div style="margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="margin-bottom: 20px; padding: 15px; background: #0f1429; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #2a2f4a;">
                 <div>
-                    <strong style="color: #0066cc;" id="mindMapStatus">📊 Mind Map: Loaded</strong>
-                    <span id="mindMapName" style="color: #555; margin-left: 10px;"></span>
+                    <strong style="color: #8bb4ff;" id="mindMapStatus">📊 Mind Map: Loaded</strong>
+                    <span id="mindMapName" style="color: #b0b0b0; margin-left: 10px;"></span>
                 </div>
-                <a href="/setup" style="color: #0066cc; text-decoration: none; font-weight: 600;" id="changeMindMap">Change Mind Map</a>
+                <a href="/setup" style="color: #8bb4ff; text-decoration: none; font-weight: 600;" id="changeMindMap">Change Mind Map</a>
             </div>
             <form id="analysisForm">
                 <div class="input-section">
@@ -491,7 +507,7 @@
                     </div>
 
                     <details style="margin-top: 20px;">
-                        <summary style="cursor: pointer; color: #667eea; font-weight: 600;" id="fullResponseLabel">View Full AI Response</summary>
+                        <summary style="cursor: pointer; color: #8bb4ff; font-weight: 600;" id="fullResponseLabel">View Full AI Response</summary>
                         <div class="full-response" id="fullResponse"></div>
                     </details>
                 </div>

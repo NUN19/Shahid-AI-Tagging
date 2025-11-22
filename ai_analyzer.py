@@ -349,8 +349,11 @@ Output in English. Focus on technical and business aspects only."""
                         img = PIL.Image.open(file_path)
                         content_parts.append(img)
         
-        # Use single model only - gemini-2.5-flash (as specified)
-        model_name = "gemini-2.5-flash"
+        # Try multiple models as fallback if safety filters block
+        # Start with gemini-2.5-flash, fallback to gemini-1.5-flash if blocked
+        primary_model = "gemini-2.5-flash"
+        fallback_model = "gemini-1.5-flash"
+        model_name = primary_model
         max_retries = 0  # NO retries - single attempt only to avoid multiple API calls
         base_delay = 30  # Start with 30 seconds delay (very conservative)
         
@@ -635,8 +638,8 @@ Output in English. Focus on technical and business aspects only."""
                         except Exception as retry3_error:
                             print(f"[API] Retry 3 failed: {retry3_error}, trying Retry 4...")
                         
-                        # RETRY 4: Try with minimal generation config and BLOCK_ONLY_HIGH (last resort)
-                        print("[API] Retry 4: Trying with minimal config and BLOCK_ONLY_HIGH (last resort)...")
+                        # RETRY 4: Try with minimal generation config and BLOCK_ONLY_HIGH
+                        print("[API] Retry 4: Trying with minimal config and BLOCK_ONLY_HIGH...")
                         try:
                             # Use minimal generation config
                             minimal_config = {
@@ -675,16 +678,59 @@ Output in English. Focus on technical and business aspects only."""
                                                 if hasattr(part, 'text'):
                                                     return part.text
                                 else:
-                                    print("[API] Retry 4 also blocked - all retries exhausted")
+                                    print("[API] Retry 4 also blocked, trying Retry 5 with alternative model...")
                             else:
-                                print("[API] Retry 4 response invalid - all retries exhausted")
+                                print("[API] Retry 4 response invalid, trying Retry 5 with alternative model...")
                         except Exception as retry4_error:
-                            print(f"[API] Retry 4 failed: {retry4_error} - all retries exhausted")
+                            print(f"[API] Retry 4 failed: {retry4_error}, trying Retry 5 with alternative model...")
+                        
+                        # RETRY 5: Try with alternative model (gemini-1.5-flash) - sometimes different models have different safety filter behavior
+                        print(f"[API] Retry 5: Trying with alternative model '{fallback_model}'...")
+                        try:
+                            # Create new model instance with fallback model
+                            fallback_model_instance = self.genai.GenerativeModel(fallback_model)
+                            fallback_settings = self._get_safety_settings()
+                            
+                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
+                                retry5_response = fallback_model_instance.generate_content(
+                                    prompt,
+                                    generation_config=gen_config,
+                                    safety_settings=fallback_settings if fallback_settings else None
+                                )
+                            else:
+                                retry5_response = fallback_model_instance.generate_content(
+                                    content_parts,
+                                    generation_config=gen_config,
+                                    safety_settings=fallback_settings if fallback_settings else None
+                                )
+                            
+                            # Check retry response
+                            if hasattr(retry5_response, 'candidates') and retry5_response.candidates:
+                                retry5_candidate = retry5_response.candidates[0]
+                                retry5_finish_reason = getattr(retry5_candidate, 'finish_reason', None)
+                                
+                                if retry5_finish_reason != 'SAFETY' and retry5_finish_reason != 2:
+                                    print(f"[API] Retry 5 successful with alternative model '{fallback_model}'!")
+                                    if hasattr(retry5_response, 'text') and retry5_response.text:
+                                        return retry5_response.text
+                                    # Try parts
+                                    if hasattr(retry5_candidate, 'content') and retry5_candidate.content:
+                                        if hasattr(retry5_candidate.content, 'parts') and retry5_candidate.content.parts:
+                                            if len(retry5_candidate.content.parts) > 0:
+                                                part = retry5_candidate.content.parts[0]
+                                                if hasattr(part, 'text'):
+                                                    return part.text
+                                else:
+                                    print(f"[API] Retry 5 also blocked with '{fallback_model}' - all retries exhausted")
+                            else:
+                                print(f"[API] Retry 5 response invalid with '{fallback_model}' - all retries exhausted")
+                        except Exception as retry5_error:
+                            print(f"[API] Retry 5 failed with '{fallback_model}': {retry5_error} - all retries exhausted")
                         
                         # If all retries fail, provide error message
                         # IMPORTANT: Don't mention "API key" in error message to avoid triggering wrong error handler
-                        print("[API] ERROR: All 4 retry attempts failed. Content is being blocked by safety filters.")
-                        raise Exception("SAFETY_FILTER_BLOCKED: Content was blocked by Gemini safety filters despite multiple retry attempts with different safety settings. The API key is valid, but the content triggers safety filters that cannot be disabled. This is a content filtering issue, not an API key issue.")
+                        print("[API] ERROR: All 5 retry attempts failed. Content is being blocked by safety filters.")
+                        raise Exception("SAFETY_FILTER_BLOCKED: Content was blocked by Gemini safety filters despite multiple retry attempts with different safety settings and models. The API key is valid, but the content triggers safety filters that cannot be disabled. This is a content filtering issue, not an API key issue.")
                     
                     else:
                         raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
