@@ -405,23 +405,23 @@ FORMAT:
                         except:
                             pass
                         
-                        # RETRY 1: Try with BLOCK_ONLY_HIGH as fallback (less restrictive than default)
-                        print("[API] Retry 1: Trying with BLOCK_ONLY_HIGH threshold...")
+                        # RETRY 1: Try with list format safety_settings (alternative format)
+                        print("[API] Retry 1: Trying with list format safety_settings...")
                         try:
-                            # Create BLOCK_ONLY_HIGH settings as fallback
-                            fallback_settings = self._get_safety_settings_block_only_high()
+                            # Convert to list format
+                            list_format_settings = self._convert_safety_settings_to_list_format(safety_settings)
                             
                             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
                                 retry_response = model.generate_content(
                                     prompt,
                                     generation_config=gen_config,
-                                    safety_settings=fallback_settings if fallback_settings else safety_settings
+                                    safety_settings=list_format_settings if list_format_settings else safety_settings
                                 )
                             else:
                                 retry_response = model.generate_content(
                                     content_parts,
                                     generation_config=gen_config,
-                                    safety_settings=fallback_settings if fallback_settings else safety_settings
+                                    safety_settings=list_format_settings if list_format_settings else safety_settings
                                 )
                             
                             # Check retry response
@@ -430,7 +430,7 @@ FORMAT:
                                 retry_finish_reason = getattr(retry_candidate, 'finish_reason', None)
                                 
                                 if retry_finish_reason != 'SAFETY' and retry_finish_reason != 2:
-                                    print("[API] Retry 1 successful with BLOCK_ONLY_HIGH!")
+                                    print("[API] Retry 1 successful with list format!")
                                     if hasattr(retry_response, 'text') and retry_response.text:
                                         return retry_response.text
                                     # Try parts
@@ -447,21 +447,23 @@ FORMAT:
                         except Exception as retry_error:
                             print(f"[API] Retry 1 failed: {retry_error}, trying Retry 2...")
                         
-                        # RETRY 2: Try with exact same BLOCK_NONE settings again (sometimes API needs a second attempt)
-                        print("[API] Retry 2: Retrying with BLOCK_NONE settings again...")
+                        # RETRY 2: Try with BLOCK_ONLY_HIGH as fallback (less restrictive than default)
+                        print("[API] Retry 2: Trying with BLOCK_ONLY_HIGH threshold...")
                         try:
-                            # Retry with exact same prompt and settings - no changes
+                            # Create BLOCK_ONLY_HIGH settings as fallback
+                            fallback_settings = self._get_safety_settings_block_only_high()
+                            
                             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
                                 retry2_response = model.generate_content(
                                     prompt,
                                     generation_config=gen_config,
-                                    safety_settings=safety_settings
+                                    safety_settings=fallback_settings if fallback_settings else safety_settings
                                 )
                             else:
                                 retry2_response = model.generate_content(
                                     content_parts,
                                     generation_config=gen_config,
-                                    safety_settings=safety_settings
+                                    safety_settings=fallback_settings if fallback_settings else safety_settings
                                 )
                             
                             # Check retry response
@@ -470,7 +472,7 @@ FORMAT:
                                 retry2_finish_reason = getattr(retry2_candidate, 'finish_reason', None)
                                 
                                 if retry2_finish_reason != 'SAFETY' and retry2_finish_reason != 2:
-                                    print("[API] Retry 2 successful!")
+                                    print("[API] Retry 2 successful with BLOCK_ONLY_HIGH!")
                                     if hasattr(retry2_response, 'text') and retry2_response.text:
                                         return retry2_response.text
                                     # Try parts
@@ -481,14 +483,54 @@ FORMAT:
                                                 if hasattr(part, 'text'):
                                                     return part.text
                                 else:
-                                    print("[API] Retry 2 also blocked - safety filters may not be properly disabled")
+                                    print("[API] Retry 2 also blocked, trying Retry 3...")
                             else:
-                                print("[API] Retry 2 response invalid")
+                                print("[API] Retry 2 response invalid, trying Retry 3...")
                         except Exception as retry2_error:
-                            print(f"[API] Retry 2 failed: {retry2_error}")
+                            print(f"[API] Retry 2 failed: {retry2_error}, trying Retry 3...")
+                        
+                        # RETRY 3: Try WITHOUT safety_settings (let model use defaults - sometimes works better)
+                        print("[API] Retry 3: Trying WITHOUT safety_settings (using model defaults)...")
+                        try:
+                            # Try without safety_settings - some API keys/models work better this way
+                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
+                                retry3_response = model.generate_content(
+                                    prompt,
+                                    generation_config=gen_config
+                                    # No safety_settings - let model use defaults
+                                )
+                            else:
+                                retry3_response = model.generate_content(
+                                    content_parts,
+                                    generation_config=gen_config
+                                    # No safety_settings - let model use defaults
+                                )
+                            
+                            # Check retry response
+                            if hasattr(retry3_response, 'candidates') and retry3_response.candidates:
+                                retry3_candidate = retry3_response.candidates[0]
+                                retry3_finish_reason = getattr(retry3_candidate, 'finish_reason', None)
+                                
+                                if retry3_finish_reason != 'SAFETY' and retry3_finish_reason != 2:
+                                    print("[API] Retry 3 successful without safety_settings!")
+                                    if hasattr(retry3_response, 'text') and retry3_response.text:
+                                        return retry3_response.text
+                                    # Try parts
+                                    if hasattr(retry3_candidate, 'content') and retry3_candidate.content:
+                                        if hasattr(retry3_candidate.content, 'parts') and retry3_candidate.content.parts:
+                                            if len(retry3_candidate.content.parts) > 0:
+                                                part = retry3_candidate.content.parts[0]
+                                                if hasattr(part, 'text'):
+                                                    return part.text
+                                else:
+                                    print("[API] Retry 3 also blocked")
+                            else:
+                                print("[API] Retry 3 response invalid")
+                        except Exception as retry3_error:
+                            print(f"[API] Retry 3 failed: {retry3_error}")
                         
                         # If all retries fail, provide error message
-                        raise Exception("Content was blocked by Gemini safety filters despite BLOCK_NONE settings. Please check that your API key has permissions to disable safety filters, or contact Google Cloud support.")
+                        raise Exception("Content was blocked by Gemini safety filters despite multiple retry attempts with different safety settings. This may indicate API key restrictions or model limitations. Please check your API key permissions or try a different API key.")
                     
                     else:
                         raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
@@ -644,6 +686,26 @@ FORMAT:
                         safety_settings = None
         
         return safety_settings
+    
+    def _convert_safety_settings_to_list_format(self, safety_settings_dict):
+        """Convert dict format safety_settings to list format (alternative format that might work better)"""
+        if not safety_settings_dict:
+            return None
+        
+        try:
+            from google.generativeai.types import HarmCategory, HarmBlockThreshold
+            
+            # Convert dict to list format: [{'category': HarmCategory.X, 'threshold': HarmBlockThreshold.Y}, ...]
+            safety_list = []
+            for category_enum, threshold_enum in safety_settings_dict.items():
+                safety_list.append({
+                    'category': category_enum,
+                    'threshold': threshold_enum
+                })
+            return safety_list
+        except Exception as e:
+            print(f"[API] Failed to convert safety_settings to list format: {e}")
+            return None
     
     def _get_safety_settings_block_only_high(self):
         """Get safety settings with BLOCK_ONLY_HIGH threshold (fallback if BLOCK_NONE doesn't work)"""
