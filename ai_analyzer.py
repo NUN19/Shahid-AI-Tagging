@@ -243,36 +243,50 @@ FORMAT:
         
         # Single attempt only - no retries
         try:
+            # Configure safety settings to allow all business content
+            # BLOCK_NONE = 0 (allow all), BLOCK_ONLY_HIGH = 1, BLOCK_MEDIUM_AND_ABOVE = 2, BLOCK_LOW_AND_ABOVE = 3
+            # Using BLOCK_NONE (0) to prevent false positives for business scenarios
+            try:
+                from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                safety_settings = [
+                    {
+                        "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
+                        "threshold": HarmBlockThreshold.BLOCK_NONE  # Allow all for business use
+                    },
+                    {
+                        "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                        "threshold": HarmBlockThreshold.BLOCK_NONE
+                    },
+                    {
+                        "category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                        "threshold": HarmBlockThreshold.BLOCK_NONE
+                    },
+                    {
+                        "category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                        "threshold": HarmBlockThreshold.BLOCK_NONE
+                    }
+                ]
+            except (ImportError, AttributeError):
+                # Fallback: Use numeric format (BLOCK_NONE = 0)
+                safety_settings = [
+                    {"category": 1, "threshold": 0},  # HARM_CATEGORY_HARASSMENT - BLOCK_NONE
+                    {"category": 2, "threshold": 0},  # HARM_CATEGORY_HATE_SPEECH - BLOCK_NONE
+                    {"category": 3, "threshold": 0},  # HARM_CATEGORY_SEXUALLY_EXPLICIT - BLOCK_NONE
+                    {"category": 4, "threshold": 0}   # HARM_CATEGORY_DANGEROUS_CONTENT - BLOCK_NONE
+                ]
+            
             # Verify model is available before making request
             try:
-                model = self.genai.GenerativeModel(model_name)
+                model = self.genai.GenerativeModel(
+                    model_name,
+                    safety_settings=safety_settings
+                )
                 print(f"[API] Using model: {model_name} with key: {os.getenv('GEMINI_API_KEY')[:20]}...")
             except Exception as model_error:
                 error_msg = str(model_error)
                 if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
                     raise Exception(f"Model '{model_name}' not available. The model may not exist or your API key doesn't have access. Error: {error_msg}")
                 raise
-            
-            # Configure safety settings to be less restrictive for business use cases
-            # BLOCK_NONE = 0, BLOCK_ONLY_HIGH = 1, BLOCK_MEDIUM_AND_ABOVE = 2, BLOCK_LOW_AND_ABOVE = 3
-            safety_settings = [
-                {
-                    "category": "HARM_CATEGORY_HARASSMENT",
-                    "threshold": "BLOCK_ONLY_HIGH"  # Allow medium and low severity
-                },
-                {
-                    "category": "HARM_CATEGORY_HATE_SPEECH",
-                    "threshold": "BLOCK_ONLY_HIGH"
-                },
-                {
-                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    "threshold": "BLOCK_ONLY_HIGH"
-                },
-                {
-                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                    "threshold": "BLOCK_ONLY_HIGH"
-                }
-            ]
             
             # For text-only requests
             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
@@ -281,8 +295,7 @@ FORMAT:
                     generation_config={
                         "temperature": 0.3,
                         "max_output_tokens": 1500,  # Reduced to save tokens
-                    },
-                    safety_settings=safety_settings
+                    }
                 )
             else:
                 # For requests with images, use content_parts
@@ -291,8 +304,7 @@ FORMAT:
                     generation_config={
                         "temperature": 0.3,
                         "max_output_tokens": 1500,  # Reduced to save tokens
-                    },
-                    safety_settings=safety_settings
+                    }
                 )
             
             # Check response structure - handle safety filters FIRST before accessing text
