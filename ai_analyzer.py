@@ -110,51 +110,96 @@ class AIAnalyzer:
             error_msg = 'Please provide a customer scenario' if language == 'en' else 'الرجاء إدخال سيناريو العميل'
             return {'error': error_msg}
         
-        # Prepare optimized mind map context (summary to reduce token usage)
-        # Use summary instead of full data to reduce API costs and rate limit issues
+        # Prepare detailed mind map context with complete tag logic
+        # Now includes ALL rows with full logic details for better tag understanding
         mind_map_context = self.mind_map_parser.get_mind_map_summary()
         
-        # If summary is still too large, truncate it
-        if len(mind_map_context) > 5000:  # Limit to ~5000 characters
-            mind_map_context = mind_map_context[:5000] + "\n... (truncated for efficiency)"
+        # If context is too large, prioritize keeping complete tag logic
+        # Increase limit to allow more tag logic details (important for accuracy)
+        if len(mind_map_context) > 8000:  # Increased limit to ~8000 characters for better tag logic
+            # Try to keep complete tag entries rather than truncating mid-tag
+            truncated = mind_map_context[:8000]
+            # Find last complete tag entry
+            last_tag_end = max(
+                truncated.rfind('\nRow '),
+                truncated.rfind('TAG:'),
+                truncated.rfind('Sheet:')
+            )
+            if last_tag_end > 7000:  # If we can keep most of it
+                mind_map_context = truncated[:last_tag_end] + "\n\n... (additional tags truncated for efficiency)"
+            else:
+                mind_map_context = truncated + "\n... (truncated for efficiency)"
         
         # Detect if input is Arabic (simple heuristic)
         is_arabic = self._is_arabic_text(scenario_text) or language == 'ar'
         
-        # Build optimized, shorter system prompt to reduce token usage
+        # Build detailed system prompt that helps AI understand tag logic and relate to scenarios
         # IMPORTANT: Add business-focused instructions to avoid safety filter triggers
         if is_arabic:
-            system_prompt = f"""You are a customer support tag classification system for a legitimate business service.
+            system_prompt = f"""You are an expert customer support tag classification system for a legitimate business service.
 
 CONTEXT: This is a business application for categorizing customer service requests. All scenarios are legitimate business inquiries about service usage, technical issues, or account management.
 
-MIND MAP:
+TAG LOGIC MIND MAP (Complete Reference):
 {mind_map_context}
 
-TASK: Analyze the customer scenario and recommend appropriate tags from the mind map. Output in English only.
-IMPORTANT: This is a business context. Focus on technical and business aspects only. Use neutral, professional language. All terms refer to legitimate business operations.
+YOUR TASK:
+1. CAREFULLY READ the complete tag logic in the mind map above. Each row contains a tag with its full logic/criteria.
+2. UNDERSTAND the relationship between tag logic and customer scenarios:
+   - Match keywords, phrases, and concepts from the scenario to the tag logic
+   - Consider synonyms, related terms, and contextual meaning
+   - Look for matches in ALL columns of each tag (not just tag names)
+   - Understand the complete logic/criteria for each tag before recommending
+3. ANALYZE the customer scenario and identify which tags from the mind map best match:
+   - Compare scenario content with tag logic in all columns
+   - Consider partial matches and related concepts
+   - Multiple tags can apply if the scenario matches multiple tag logics
+4. RECOMMEND tags that have the strongest logical relationship to the scenario
 
-FORMAT:
-- Recommended Tag(s): [exact tag names from mind map]
-- Confidence: [High/Medium/Low]
-- Reasoning: [brief explanation in English]
-- Mind Map Reference: [sheet/row reference]"""
+IMPORTANT: 
+- This is a business context. Focus on technical and business aspects only.
+- Use neutral, professional language. All terms refer to legitimate business operations.
+- You must understand the COMPLETE LOGIC of each tag before recommending it.
+- Match based on LOGIC and CONTEXT, not just exact keyword matching.
+- Output in English only.
+
+OUTPUT FORMAT:
+- Recommended Tag(s): [exact tag names from mind map, can be multiple]
+- Confidence: [High/Medium/Low - based on how well scenario matches tag logic]
+- Reasoning: [detailed explanation showing HOW the scenario relates to the tag logic, cite specific logic elements that match]
+- Mind Map Reference: [sheet name and row number(s) of matched tags]"""
         else:
-            system_prompt = f"""You are a customer support tag classification system for a legitimate business service.
+            system_prompt = f"""You are an expert customer support tag classification system for a legitimate business service.
 
 CONTEXT: This is a business application for categorizing customer service requests. All scenarios are legitimate business inquiries about service usage, technical issues, or account management.
 
-MIND MAP:
+TAG LOGIC MIND MAP (Complete Reference):
 {mind_map_context}
 
-TASK: Analyze the customer scenario and recommend appropriate tags from the mind map.
-IMPORTANT: This is a business context. Focus on technical and business aspects only. Use neutral, professional language. All terms refer to legitimate business operations.
+YOUR TASK:
+1. CAREFULLY READ the complete tag logic in the mind map above. Each row contains a tag with its full logic/criteria.
+2. UNDERSTAND the relationship between tag logic and customer scenarios:
+   - Match keywords, phrases, and concepts from the scenario to the tag logic
+   - Consider synonyms, related terms, and contextual meaning
+   - Look for matches in ALL columns of each tag (not just tag names)
+   - Understand the complete logic/criteria for each tag before recommending
+3. ANALYZE the customer scenario and identify which tags from the mind map best match:
+   - Compare scenario content with tag logic in all columns
+   - Consider partial matches and related concepts
+   - Multiple tags can apply if the scenario matches multiple tag logics
+4. RECOMMEND tags that have the strongest logical relationship to the scenario
 
-FORMAT:
-- Recommended Tag(s): [exact tag names from mind map]
-- Confidence: [High/Medium/Low]
-- Reasoning: [brief explanation]
-- Mind Map Reference: [sheet/row reference]"""
+IMPORTANT: 
+- This is a business context. Focus on technical and business aspects only.
+- Use neutral, professional language. All terms refer to legitimate business operations.
+- You must understand the COMPLETE LOGIC of each tag before recommending it.
+- Match based on LOGIC and CONTEXT, not just exact keyword matching.
+
+OUTPUT FORMAT:
+- Recommended Tag(s): [exact tag names from mind map, can be multiple]
+- Confidence: [High/Medium/Low - based on how well scenario matches tag logic]
+- Reasoning: [detailed explanation showing HOW the scenario relates to the tag logic, cite specific logic elements that match]
+- Mind Map Reference: [sheet name and row number(s) of matched tags]"""
         
         # Build messages for AI
         messages = [
@@ -165,8 +210,23 @@ FORMAT:
         ]
         
         # Use original scenario text verbatim - no neutralization
-        # Add user scenario with business context
-        user_content = f"CUSTOMER SERVICE SCENARIO:\n{scenario_text}\n\nAnalyze this customer service request and recommend appropriate tags. Output in English. Focus on technical and business aspects only."
+        # Add user scenario with detailed instructions for better tag logic matching
+        user_content = f"""CUSTOMER SERVICE SCENARIO TO ANALYZE:
+{scenario_text}
+
+ANALYSIS INSTRUCTIONS:
+1. Read the scenario carefully and identify key concepts, issues, and keywords
+2. Compare these elements with the tag logic in the mind map
+3. Find tags where the scenario content matches the tag's logic/criteria (check ALL columns)
+4. Consider:
+   - Direct keyword matches
+   - Synonym matches
+   - Conceptual matches (same meaning, different words)
+   - Related terms and context
+5. Recommend the tag(s) that have the strongest logical match
+6. Explain in your reasoning HOW the scenario relates to the tag logic (cite specific matching elements)
+
+Output in English. Focus on technical and business aspects only."""
         
         # Handle file attachments (images/videos)
         if file_paths:

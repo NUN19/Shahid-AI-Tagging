@@ -57,40 +57,57 @@ class MindMapParser:
         self.tags = {}
         
         for sheet_name, df in self.data.items():
-            # Store the full sheet data for context (this is what AI will analyze)
-            self.tags[f'_sheet_{sheet_name}'] = {
-                'type': 'sheet',
-                'data': df.to_dict('records'),
-                'columns': list(df.columns)
-            }
+            # Skip empty DataFrames
+            if df is None or df.empty or len(df) == 0:
+                continue
             
-            # Try to identify tag columns (common patterns)
-            # Look for columns that might contain tags
-            tag_columns = []
-            for col in df.columns:
-                col_str = str(col).lower()
-                if any(keyword in col_str for keyword in ['tag', 'category', 'type', 'label', 'classification']):
-                    tag_columns.append(col)
+            # Skip if no columns
+            if len(df.columns) == 0:
+                continue
             
-            # If no obvious tag column found, use first column as potential tag column
-            if not tag_columns and len(df.columns) > 0:
-                tag_columns = [df.columns[0]]
-            
-            # Extract tags from identified columns
-            for col in tag_columns:
-                for idx, row in df.iterrows():
-                    tag_value = str(row[col]).strip()
-                    if tag_value and tag_value.lower() not in ['nan', 'none', '', 'none', 'n/a']:
-                        # Create unique key for tag
-                        tag_key = f"{tag_value}_{sheet_name}_{idx}"
-                        if tag_key not in self.tags:
-                            self.tags[tag_key] = {
-                                'tag_name': tag_value,
-                                'sheet': sheet_name,
-                                'row': idx,
-                                'logic': self._extract_row_logic(row, df.columns),
-                                'full_row': row.to_dict()
-                            }
+            try:
+                # Store the full sheet data for context (this is what AI will analyze)
+                self.tags[f'_sheet_{sheet_name}'] = {
+                    'type': 'sheet',
+                    'data': df.to_dict('records'),
+                    'columns': list(df.columns)
+                }
+                
+                # Try to identify tag columns (common patterns)
+                # Look for columns that might contain tags
+                tag_columns = []
+                for col in df.columns:
+                    col_str = str(col).lower()
+                    if any(keyword in col_str for keyword in ['tag', 'category', 'type', 'label', 'classification']):
+                        tag_columns.append(col)
+                
+                # If no obvious tag column found, use first column as potential tag column
+                if not tag_columns and len(df.columns) > 0:
+                    tag_columns = [df.columns[0]]
+                
+                # Extract tags from identified columns
+                for col in tag_columns:
+                    for idx, row in df.iterrows():
+                        try:
+                            tag_value = str(row[col]).strip()
+                            if tag_value and tag_value.lower() not in ['nan', 'none', '', 'none', 'n/a']:
+                                # Create unique key for tag
+                                tag_key = f"{tag_value}_{sheet_name}_{idx}"
+                                if tag_key not in self.tags:
+                                    self.tags[tag_key] = {
+                                        'tag_name': tag_value,
+                                        'sheet': sheet_name,
+                                        'row': idx,
+                                        'logic': self._extract_row_logic(row, df.columns),
+                                        'full_row': row.to_dict()
+                                    }
+                        except Exception as row_error:
+                            # Skip problematic rows instead of crashing
+                            continue
+            except Exception as sheet_error:
+                # Skip problematic sheets instead of crashing
+                print(f"Warning: Error processing sheet '{sheet_name}': {sheet_error}, skipping...")
+                continue
     
     def _extract_row_logic(self, row, columns):
         """Extract logic/criteria from a row"""
@@ -113,27 +130,66 @@ class MindMapParser:
         return unique_tags
     
     def get_mind_map_summary(self):
-        """Get a summary of the mind map for AI context"""
+        """Get a detailed summary of the mind map with full tag logic for AI context"""
         summary = []
-        summary.append("Mind Map Structure:")
-        summary.append(f"Total Sheets: {len(self.data)}")
+        summary.append("=" * 80)
+        summary.append("TAG CLASSIFICATION MIND MAP - COMPLETE LOGIC REFERENCE")
+        summary.append("=" * 80)
+        summary.append(f"\nTotal Sheets: {len(self.data)}")
+        summary.append("\n" + "=" * 80)
         
         for sheet_name, df in self.data.items():
-            summary.append(f"\nSheet: {sheet_name}")
-            summary.append(f"  Rows: {len(df)}, Columns: {len(df.columns)}")
-            summary.append(f"  Columns: {', '.join(df.columns)}")
+            # Skip empty or invalid DataFrames
+            if df is None or df.empty or len(df) == 0:
+                continue
             
-            # Add sample data
-            if len(df) > 0:
-                summary.append(f"  Sample rows (first 3):")
-                for idx in range(min(3, len(df))):
-                    row_summary = []
-                    for col in df.columns:
-                        val = str(df.iloc[idx][col]).strip()
-                        if val and val.lower() not in ['nan', 'none', '']:
-                            row_summary.append(f"{col}={val}")
-                    if row_summary:
-                        summary.append(f"    Row {idx}: {' | '.join(row_summary)}")
+            try:
+                summary.append(f"\n{'='*80}")
+                summary.append(f"SHEET: {sheet_name}")
+                summary.append(f"{'='*80}")
+                summary.append(f"Total Rows: {len(df)}, Columns: {len(df.columns)}")
+                
+                if len(df.columns) > 0:
+                    summary.append(f"\nColumn Structure: {', '.join(str(col) for col in df.columns)}")
+                    summary.append("\n" + "-" * 80)
+                    summary.append("COMPLETE TAG LOGIC (All Rows with Full Details):")
+                    summary.append("-" * 80)
+                    
+                    # Include ALL rows with complete logic, not just samples
+                    for idx, row in df.iterrows():
+                        try:
+                            row_details = []
+                            tag_name = None
+                            
+                            # Extract all column values for this row
+                            for col in df.columns:
+                                try:
+                                    val = str(row[col]).strip()
+                                    if val and val.lower() not in ['nan', 'none', '']:
+                                        # Identify potential tag name column
+                                        col_lower = str(col).lower()
+                                        if any(keyword in col_lower for keyword in ['tag', 'category', 'type', 'label', 'name', 'classification']):
+                                            if not tag_name:
+                                                tag_name = val
+                                        row_details.append(f"{col}: {val}")
+                                except:
+                                    continue
+                            
+                            if row_details:
+                                # Format: Tag Name (if found) | All Logic Details
+                                tag_prefix = f"TAG: {tag_name} | " if tag_name else ""
+                                summary.append(f"\nRow {idx}: {tag_prefix}{' | '.join(row_details)}")
+                        except Exception as row_error:
+                            continue
+                    
+                    summary.append("\n" + "-" * 80)
+            except Exception as e:
+                # Skip problematic sheets
+                continue
+        
+        summary.append("\n" + "=" * 80)
+        summary.append("END OF MIND MAP")
+        summary.append("=" * 80)
         
         return "\n".join(summary)
     

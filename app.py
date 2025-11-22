@@ -78,15 +78,25 @@ def get_mind_map_parser():
             for sheet_name, sheet_data in data_dict.items():
                 # sheet_data is a list of dictionaries (rows)
                 if not isinstance(sheet_data, list):
-                    print(f"Error: Sheet '{sheet_name}' data is not a list")
+                    print(f"Warning: Sheet '{sheet_name}' data is not a list, skipping...")
                     continue
                 
                 if len(sheet_data) == 0:
-                    print(f"Warning: Sheet '{sheet_name}' is empty")
-                    # Create empty DataFrame with at least one row to avoid errors
-                    parsed_data[sheet_name] = pd.DataFrame([{}])
-                else:
-                    parsed_data[sheet_name] = pd.DataFrame(sheet_data)
+                    print(f"Info: Sheet '{sheet_name}' is empty, skipping...")
+                    # Skip empty sheets instead of creating empty DataFrames
+                    continue
+                
+                try:
+                    # Convert to DataFrame
+                    df = pd.DataFrame(sheet_data)
+                    # Only add if DataFrame has at least one column
+                    if len(df.columns) > 0:
+                        parsed_data[sheet_name] = df
+                    else:
+                        print(f"Info: Sheet '{sheet_name}' has no columns, skipping...")
+                except Exception as df_error:
+                    print(f"Warning: Failed to convert sheet '{sheet_name}' to DataFrame: {df_error}, skipping...")
+                    continue
             
             if len(parsed_data) == 0:
                 print("Error: No valid sheets found in mind map data")
@@ -188,12 +198,26 @@ def upload_mindmap():
                     del mind_map_storage[session_id]
                 return jsonify({
                     'error': 'Failed to parse mind map data',
-                    'details': 'The uploaded Excel file could not be processed. Please check the file format.'
+                    'details': 'The uploaded Excel file could not be processed. Please check the file format. Ensure at least one sheet has data.',
+                    'solution': 'Make sure your Excel file has at least one sheet with data rows.'
                 }), 400
             
             # Get summary info
-            sheets_count = len(parser.data)
-            total_tags = len(parser.get_all_tags())
+            sheets_count = len(parser.data) if parser.data else 0
+            total_tags = len(parser.get_all_tags()) if parser else 0
+            
+            # Validate we have at least some data
+            if sheets_count == 0 or total_tags == 0:
+                # Clean up storage if no valid data
+                session_id = session.get('_id')
+                if session_id and session_id in mind_map_storage:
+                    del mind_map_storage[session_id]
+                session.pop('mind_map_filename', None)
+                return jsonify({
+                    'error': 'No valid data found',
+                    'details': 'The Excel file was processed but contains no valid data. All sheets appear to be empty or have no extractable tags.',
+                    'solution': 'Please ensure your Excel file has at least one sheet with data rows containing tag information.'
+                }), 400
             
             return jsonify({
                 'success': True,
@@ -207,10 +231,13 @@ def upload_mindmap():
             if session_id and session_id in mind_map_storage:
                 del mind_map_storage[session_id]
             session.pop('mind_map_filename', None)
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"Error parsing mind map: {error_trace}")
             return jsonify({
                 'error': 'Failed to parse mind map data',
                 'details': str(parse_error),
-                'solution': 'Please ensure your Excel file is valid and contains data in the expected format.'
+                'solution': 'Please ensure your Excel file is valid and contains data in the expected format. Check that sheets are not completely empty.'
             }), 400
     
     except Exception as e:
