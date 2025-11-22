@@ -205,7 +205,18 @@ FORMAT:
         except Exception as e:
             error_str = str(e)
             # Provide user-friendly error messages for Gemini
-            if 'API key' in error_str or 'permission' in error_str.lower() or '403' in error_str:
+            # IMPORTANT: Check for actual API key errors first, but be more specific
+            # Don't trigger on safety filter errors that mention "API key restrictions"
+            if 'SAFETY_FILTER_BLOCKED' in error_str:
+                # This is a safety filter issue, not an API key issue
+                return {
+                    'error': 'Content Blocked by Safety Filters',
+                    'details': 'The content was blocked by Gemini safety filters despite attempts to disable them. Your API key is valid, but the content triggers safety filters that cannot be bypassed.',
+                    'solution': 'This is an intermittent issue with Gemini\'s safety filters. The system will retry automatically. If this persists, try rephrasing your scenario or contact support.',
+                    'full_error': error_str
+                }
+            elif ('API key' in error_str and 'invalid' in error_str.lower()) or ('403' in error_str and 'permission' in error_str.lower() and 'API key' in error_str):
+                # Only trigger on actual API key errors, not safety filter errors
                 return {
                     'error': 'Invalid Gemini API Key',
                     'details': 'The Gemini API key is invalid or has insufficient permissions.',
@@ -558,14 +569,62 @@ FORMAT:
                                                 if hasattr(part, 'text'):
                                                     return part.text
                                 else:
-                                    print("[API] Retry 3 also blocked")
+                                    print("[API] Retry 3 also blocked, trying Retry 4...")
                             else:
-                                print("[API] Retry 3 response invalid")
+                                print("[API] Retry 3 response invalid, trying Retry 4...")
                         except Exception as retry3_error:
-                            print(f"[API] Retry 3 failed: {retry3_error}")
+                            print(f"[API] Retry 3 failed: {retry3_error}, trying Retry 4...")
+                        
+                        # RETRY 4: Try with minimal generation config and BLOCK_ONLY_HIGH (last resort)
+                        print("[API] Retry 4: Trying with minimal config and BLOCK_ONLY_HIGH (last resort)...")
+                        try:
+                            # Use minimal generation config
+                            minimal_config = {
+                                "temperature": 0.1,  # Lower temperature
+                                "max_output_tokens": 1000,  # Fewer tokens
+                            }
+                            fallback_settings = self._get_safety_settings_block_only_high()
+                            
+                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
+                                retry4_response = model.generate_content(
+                                    prompt,
+                                    generation_config=minimal_config,
+                                    safety_settings=fallback_settings if fallback_settings else None
+                                )
+                            else:
+                                retry4_response = model.generate_content(
+                                    content_parts,
+                                    generation_config=minimal_config,
+                                    safety_settings=fallback_settings if fallback_settings else None
+                                )
+                            
+                            # Check retry response
+                            if hasattr(retry4_response, 'candidates') and retry4_response.candidates:
+                                retry4_candidate = retry4_response.candidates[0]
+                                retry4_finish_reason = getattr(retry4_candidate, 'finish_reason', None)
+                                
+                                if retry4_finish_reason != 'SAFETY' and retry4_finish_reason != 2:
+                                    print("[API] Retry 4 successful with minimal config!")
+                                    if hasattr(retry4_response, 'text') and retry4_response.text:
+                                        return retry4_response.text
+                                    # Try parts
+                                    if hasattr(retry4_candidate, 'content') and retry4_candidate.content:
+                                        if hasattr(retry4_candidate.content, 'parts') and retry4_candidate.content.parts:
+                                            if len(retry4_candidate.content.parts) > 0:
+                                                part = retry4_candidate.content.parts[0]
+                                                if hasattr(part, 'text'):
+                                                    return part.text
+                                else:
+                                    print("[API] Retry 4 also blocked - all retries exhausted")
+                            else:
+                                print("[API] Retry 4 response invalid - all retries exhausted")
+                        except Exception as retry4_error:
+                            print(f"[API] Retry 4 failed: {retry4_error} - all retries exhausted")
                         
                         # If all retries fail, provide error message
-                        raise Exception("Content was blocked by Gemini safety filters despite multiple retry attempts with different safety settings. This may indicate API key restrictions or model limitations. Please check your API key permissions or try a different API key.")
+                        # IMPORTANT: Don't mention "API key" in error message to avoid triggering wrong error handler
+                        print("[API] ERROR: All 4 retry attempts failed. Content is being blocked by safety filters.")
+                        raise Exception("SAFETY_FILTER_BLOCKED: Content was blocked by Gemini safety filters despite multiple retry attempts with different safety settings. The API key is valid, but the content triggers safety filters that cannot be disabled. This is a content filtering issue, not an API key issue.")
                     
                     else:
                         raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
@@ -616,7 +675,11 @@ FORMAT:
             # Better error handling for Gemini
             if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
                 raise Exception(f"Gemini model '{model_name}' not available. Error: {error_msg}")
-            elif "403" in error_msg or "permission" in error_msg.lower() or "API key" in error_msg.lower():
+            elif "SAFETY_FILTER_BLOCKED" in error_msg:
+                # Re-raise safety filter errors as-is (they're handled in analyze_scenario)
+                raise Exception(error_msg)
+            elif "403" in error_msg and ("permission" in error_msg.lower() or "API key" in error_msg.lower()) and "invalid" in error_msg.lower():
+                # Only raise API key error for actual 403 permission errors, not safety filter blocks
                 raise Exception(f"Gemini API key invalid or permission denied. Please check your GEMINI_API_KEY in .env file. Error: {error_msg}")
             elif ("429" in error_msg or 
                   "quota" in error_msg.lower() or 

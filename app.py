@@ -285,9 +285,11 @@ def analyze_scenario():
         }
         
         # Add helpful messages for common errors
-        if 'safety' in error_msg.lower() or 'blocked' in error_msg.lower():
-            error_response['solution'] = 'The content was blocked by safety filters. Please try rephrasing your scenario in a more neutral way.'
-        elif 'API key' in error_msg.lower() or '403' in error_msg or 'permission' in error_msg.lower():
+        # IMPORTANT: Check for SAFETY_FILTER_BLOCKED first to avoid misclassifying as API key error
+        if 'SAFETY_FILTER_BLOCKED' in error_msg or ('safety' in error_msg.lower() and 'blocked' in error_msg.lower()):
+            error_response['solution'] = 'The content was blocked by safety filters. This is an intermittent issue. The system will retry automatically. If this persists, try rephrasing your scenario.'
+        elif ('API key' in error_msg.lower() and 'invalid' in error_msg.lower()) or ('403' in error_msg and 'permission' in error_msg.lower() and 'API key' in error_msg.lower()):
+            # Only show API key error for actual API key issues, not safety filter blocks
             error_response['solution'] = 'Please check your GEMINI_API_KEY in environment variables.'
         elif 'rate limit' in error_msg.lower() or '429' in error_msg or 'quota' in error_msg.lower():
             error_response['solution'] = 'API rate limit exceeded. Please wait 2-3 minutes and try again.'
