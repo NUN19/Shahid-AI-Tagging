@@ -141,6 +141,10 @@ def analyze_scenario():
         scenario = data.get('scenario', '')
         language = data.get('language', 'en')  # Get language preference
         
+        if not scenario.strip():
+            error_msg = 'Please provide a customer scenario' if language == 'en' else 'الرجاء إدخال سيناريو العميل'
+            return jsonify({'error': error_msg}), 400
+        
         # Handle file uploads (scenario images/videos)
         files = request.files.getlist('files')
         file_paths = []
@@ -157,12 +161,31 @@ def analyze_scenario():
         # Clean up uploaded files
         for file_path in file_paths:
             if os.path.exists(file_path):
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+                except:
+                    pass  # Ignore cleanup errors
         
+        # Always return JSON, even if result has error
         return jsonify(result)
     
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # Always return JSON error response
+        error_msg = str(e)
+        error_response = {
+            'error': 'AI Analysis Failed',
+            'details': error_msg
+        }
+        
+        # Add helpful messages for common errors
+        if 'safety' in error_msg.lower() or 'blocked' in error_msg.lower():
+            error_response['solution'] = 'The content was blocked by safety filters. Please try rephrasing your scenario in a more neutral way.'
+        elif 'API key' in error_msg.lower() or '403' in error_msg or 'permission' in error_msg.lower():
+            error_response['solution'] = 'Please check your GEMINI_API_KEY in environment variables.'
+        elif 'rate limit' in error_msg.lower() or '429' in error_msg or 'quota' in error_msg.lower():
+            error_response['solution'] = 'API rate limit exceeded. Please wait 2-3 minutes and try again.'
+        
+        return jsonify(error_response), 500
 
 @app.route('/api/tags', methods=['GET'])
 def get_tags():
@@ -183,7 +206,9 @@ def setup():
 
 if __name__ == '__main__':
     # Get host and port from environment variables, with defaults
-    host = os.getenv('FLASK_HOST', '127.0.0.1')  # Default to localhost only
-    port = int(os.getenv('FLASK_PORT', 5000))     # Default port 5000
-    app.run(debug=True, host=host, port=port)
+    # For Fly.io and cloud deployment, use PORT environment variable
+    port = int(os.getenv('PORT', os.getenv('FLASK_PORT', 5000)))
+    host = os.getenv('FLASK_HOST', '0.0.0.0')  # Use 0.0.0.0 for cloud, 127.0.0.1 for local
+    debug = os.getenv('FLASK_ENV') != 'production'
+    app.run(debug=debug, host=host, port=port)
 

@@ -276,12 +276,37 @@ FORMAT:
             if hasattr(response, 'text') and response.text:
                 return response.text
             elif hasattr(response, 'candidates') and response.candidates:
-                # Handle cases where response might be blocked
-                if response.candidates[0].finish_reason == 'SAFETY':
-                    raise Exception("Content was blocked by Gemini safety filters")
-                return response.candidates[0].content.parts[0].text if response.candidates[0].content.parts else str(response)
+                candidate = response.candidates[0]
+                
+                # Handle safety filters - check both string and numeric codes
+                # finish_reason 2 = SAFETY, 3 = RECITATION, etc.
+                finish_reason = candidate.finish_reason
+                if finish_reason == 'SAFETY' or finish_reason == 2:
+                    raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario.")
+                
+                # Check if there are parts with text
+                if hasattr(candidate, 'content') and candidate.content and hasattr(candidate.content, 'parts'):
+                    if candidate.content.parts and len(candidate.content.parts) > 0:
+                        # Get text from first part
+                        if hasattr(candidate.content.parts[0], 'text'):
+                            return candidate.content.parts[0].text
+                        elif 'text' in candidate.content.parts[0]:
+                            return candidate.content.parts[0]['text']
+                
+                # If no text found, check for finish reason
+                if finish_reason and finish_reason != 1:  # 1 = STOP (success)
+                    reason_map = {
+                        2: 'SAFETY',
+                        3: 'RECITATION',
+                        4: 'OTHER',
+                        5: 'MAX_TOKENS'
+                    }
+                    reason_name = reason_map.get(finish_reason, f'REASON_{finish_reason}')
+                    raise Exception(f"Gemini API response blocked: {reason_name}. Please try rephrasing your scenario.")
+                
+                raise Exception("Empty response from Gemini API - no text content returned")
             else:
-                raise Exception("Empty response from Gemini API")
+                raise Exception("Empty response from Gemini API - no candidates returned")
                 
         except Exception as e:
             error_msg = str(e)

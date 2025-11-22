@@ -1,0 +1,31 @@
+# Fly.io configuration file
+# This configures your app for deployment on Fly.io
+
+app = "shahid-ai-tagging"
+primary_region = "iad"  # Change to your preferred region (iad = Washington DC, ord = Chicago, etc.)
+
+[build]
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
