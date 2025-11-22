@@ -272,28 +272,19 @@ FORMAT:
                     }
                 )
             
-            # Check if response has text
-            if hasattr(response, 'text') and response.text:
-                return response.text
-            elif hasattr(response, 'candidates') and response.candidates:
+            # Check response structure - handle safety filters FIRST before accessing text
+            if hasattr(response, 'candidates') and response.candidates:
                 candidate = response.candidates[0]
                 
-                # Handle safety filters - check both string and numeric codes
+                # Check finish_reason FIRST (before trying to access text)
                 # finish_reason 2 = SAFETY, 3 = RECITATION, etc.
-                finish_reason = candidate.finish_reason
+                finish_reason = getattr(candidate, 'finish_reason', None)
+                
+                # Handle safety filters - check both string and numeric codes
                 if finish_reason == 'SAFETY' or finish_reason == 2:
-                    raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario.")
+                    raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
                 
-                # Check if there are parts with text
-                if hasattr(candidate, 'content') and candidate.content and hasattr(candidate.content, 'parts'):
-                    if candidate.content.parts and len(candidate.content.parts) > 0:
-                        # Get text from first part
-                        if hasattr(candidate.content.parts[0], 'text'):
-                            return candidate.content.parts[0].text
-                        elif 'text' in candidate.content.parts[0]:
-                            return candidate.content.parts[0]['text']
-                
-                # If no text found, check for finish reason
+                # Handle other blocking reasons
                 if finish_reason and finish_reason != 1:  # 1 = STOP (success)
                     reason_map = {
                         2: 'SAFETY',
@@ -304,9 +295,33 @@ FORMAT:
                     reason_name = reason_map.get(finish_reason, f'REASON_{finish_reason}')
                     raise Exception(f"Gemini API response blocked: {reason_name}. Please try rephrasing your scenario.")
                 
+                # Now safely try to get text (only if finish_reason is OK)
+                # Try response.text first (easiest)
+                try:
+                    if hasattr(response, 'text') and response.text:
+                        return response.text
+                except Exception:
+                    # If response.text fails, try accessing parts directly
+                    pass
+                
+                # Try accessing text from candidate parts
+                if hasattr(candidate, 'content') and candidate.content:
+                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                        if len(candidate.content.parts) > 0:
+                            part = candidate.content.parts[0]
+                            if hasattr(part, 'text'):
+                                return part.text
+                            elif isinstance(part, dict) and 'text' in part:
+                                return part['text']
+                
+                # If we get here, no text was found
                 raise Exception("Empty response from Gemini API - no text content returned")
+            
+            # Fallback: try response.text if no candidates structure
+            elif hasattr(response, 'text') and response.text:
+                return response.text
             else:
-                raise Exception("Empty response from Gemini API - no candidates returned")
+                raise Exception("Empty response from Gemini API - no candidates or text returned")
                 
         except Exception as e:
             error_msg = str(e)
