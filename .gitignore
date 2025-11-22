@@ -16,6 +16,11 @@ ENV/
 uploads/
 *.tmp
 
+# Excel files (users upload their own)
+*.xlsx
+*.xls
+Updated Mind Map.xlsx
+
 # IDE
 .vscode/
 .idea/
