@@ -253,6 +253,27 @@ FORMAT:
                     raise Exception(f"Model '{model_name}' not available. The model may not exist or your API key doesn't have access. Error: {error_msg}")
                 raise
             
+            # Configure safety settings to be less restrictive for business use cases
+            # BLOCK_NONE = 0, BLOCK_ONLY_HIGH = 1, BLOCK_MEDIUM_AND_ABOVE = 2, BLOCK_LOW_AND_ABOVE = 3
+            safety_settings = [
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_ONLY_HIGH"  # Allow medium and low severity
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                }
+            ]
+            
             # For text-only requests
             if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
                 response = model.generate_content(
@@ -260,7 +281,8 @@ FORMAT:
                     generation_config={
                         "temperature": 0.3,
                         "max_output_tokens": 1500,  # Reduced to save tokens
-                    }
+                    },
+                    safety_settings=safety_settings
                 )
             else:
                 # For requests with images, use content_parts
@@ -269,7 +291,8 @@ FORMAT:
                     generation_config={
                         "temperature": 0.3,
                         "max_output_tokens": 1500,  # Reduced to save tokens
-                    }
+                    },
+                    safety_settings=safety_settings
                 )
             
             # Check response structure - handle safety filters FIRST before accessing text

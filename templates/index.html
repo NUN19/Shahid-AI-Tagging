@@ -739,13 +739,24 @@
 
                 if (result.error) {
                     // Handle structured error messages
-                    if (result.details && result.solution) {
-                        showError(`${result.error}\n\n${result.details}\n\n💡 Solution: ${result.solution}`);
-                    } else if (result.details) {
-                        showError(`${result.error}\n\n${result.details}`);
-                    } else {
-                        showError(result.error);
+                    let errorMessage = result.error;
+                    if (result.details) {
+                        errorMessage += '\n\n' + result.details;
                     }
+                    if (result.solution) {
+                        errorMessage += '\n\n💡 Solution: ' + result.solution;
+                    }
+                    
+                    // Special handling for safety filter errors
+                    if (result.error.includes('safety') || result.error.includes('blocked')) {
+                        errorMessage += '\n\n📝 Tips to avoid blocking:';
+                        errorMessage += '\n• Use neutral, professional language';
+                        errorMessage += '\n• Avoid sensitive topics or extreme language';
+                        errorMessage += '\n• Focus on the technical/business aspects';
+                        errorMessage += '\n• Try rephrasing in a more formal tone';
+                    }
+                    
+                    showError(errorMessage);
                 } else {
                     displayResults(result);
                 }
