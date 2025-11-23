@@ -146,12 +146,66 @@ CONTEXT: This is a business application for categorizing customer service reques
 TAG LOGIC MIND MAP (Complete Reference - Organized Format):
 {mind_map_context}
 
-YOUR TASK:
-1. CAREFULLY READ the complete tag information above. Each tag entry contains:
-   - TAG NAME: The exact tag name to recommend
-   - TAG LOGIC: Detailed criteria explaining when to use this tag
-   - EXAMPLE CUSTOMER SCENARIOS: Sample scenarios that match this tag (use these as reference patterns)
-   - CATEGORY/SHEET: The category this tag belongs to
+CRITICAL INSTRUCTION: You MUST analyze ALL tags in the mind map. Count the total number of tags and process EVERY SINGLE ONE. Do NOT stop at the first match or skip any tags.
+
+YOUR TASK - MANDATORY PROCESS:
+
+STEP 1: KEYWORD EXTRACTION (Do this FIRST)
+Before analyzing any tags, extract ALL keywords from the customer scenario:
+- Technical terms (devices, services, features, error messages)
+- Action verbs (watching, streaming, paying, cancelling, accessing)
+- Problem descriptors (not working, blocked, error, issue)
+- Business terms (subscription, VIP, account, payment, device)
+- Numbers, IDs, or specific identifiers
+- Emotional/urgency indicators (urgent, frustrated, cannot, unable)
+
+Create a comprehensive keyword list. This is your matching foundation.
+
+STEP 2: SYSTEMATIC TAG PROCESSING (MANDATORY - Process ALL Tags)
+Count how many tags are in the mind map. You MUST process ALL of them systematically.
+
+For EACH tag (Tag 1, Tag 2, Tag 3... continue until ALL are processed):
+
+PHASE A: KEYWORD MATCHING WITH EXAMPLE SCENARIOS
+   - Extract keywords from EXAMPLE CUSTOMER SCENARIOS field
+   - Compare customer scenario keywords with example scenario keywords
+   - Count exact keyword matches
+   - Count semantic keyword matches (same meaning, different words)
+   - Calculate: (Exact + Semantic matches) / Total keywords = Match percentage
+   - Record this percentage
+
+PHASE B: KEYWORD MATCHING WITH TAG LOGIC
+   - Extract keywords from TAG LOGIC field
+   - Compare customer scenario keywords with TAG LOGIC keywords
+   - Count exact keyword matches
+   - Count semantic keyword matches
+   - Calculate: (Exact + Semantic matches) / Total keywords = Match percentage
+   - Record this percentage
+
+PHASE C: SEMANTIC MEANING VALIDATION
+   - After keyword matching, check semantic alignment
+   - Does scenario describe same problem as TAG LOGIC indicates?
+   - Is scenario similar in meaning to EXAMPLE SCENARIOS?
+   - Score semantic alignment (0-100%)
+
+PHASE D: CALCULATE COMBINED SCORE
+   - Example Scenario Keyword Match: ___%
+   - Tag Logic Keyword Match: ___%
+   - Semantic Meaning Match: ___%
+   - Combined Score: (Example + Logic + Semantic) / 3 = ___%
+   - Record this score for this tag
+
+PHASE E: CONTINUE TO NEXT TAG
+   - Move to next tag
+   - Repeat Phases A-D for ALL remaining tags
+   - Do NOT stop until EVERY tag is processed
+
+STEP 3: RANKING AND SELECTION (After processing ALL tags)
+- Sort all tags by combined scores (highest to lowest)
+- Tags with 80%+ = HIGH confidence
+- Tags with 60-80% = MEDIUM confidence
+- Tags with 40-60% = LOW confidence
+- Select the highest scoring tag(s)
 
 2. MATCHING STRATEGY (CRITICAL - Follow this process precisely):
    
@@ -276,12 +330,66 @@ CONTEXT: This is a business application for categorizing customer service reques
 TAG LOGIC MIND MAP (Complete Reference - Organized Format):
 {mind_map_context}
 
-YOUR TASK:
-1. CAREFULLY READ the complete tag information above. Each tag entry contains:
-   - TAG NAME: The exact tag name to recommend
-   - TAG LOGIC: Detailed criteria explaining when to use this tag
-   - EXAMPLE CUSTOMER SCENARIOS: Sample scenarios that match this tag (use these as reference patterns)
-   - CATEGORY/SHEET: The category this tag belongs to
+CRITICAL INSTRUCTION: You MUST analyze ALL tags in the mind map. Count the total number of tags and process EVERY SINGLE ONE. Do NOT stop at the first match or skip any tags.
+
+YOUR TASK - MANDATORY PROCESS:
+
+STEP 1: KEYWORD EXTRACTION (Do this FIRST)
+Before analyzing any tags, extract ALL keywords from the customer scenario:
+- Technical terms (devices, services, features, error messages)
+- Action verbs (watching, streaming, paying, cancelling, accessing)
+- Problem descriptors (not working, blocked, error, issue)
+- Business terms (subscription, VIP, account, payment, device)
+- Numbers, IDs, or specific identifiers
+- Emotional/urgency indicators (urgent, frustrated, cannot, unable)
+
+Create a comprehensive keyword list. This is your matching foundation.
+
+STEP 2: SYSTEMATIC TAG PROCESSING (MANDATORY - Process ALL Tags)
+Count how many tags are in the mind map. You MUST process ALL of them systematically.
+
+For EACH tag (Tag 1, Tag 2, Tag 3... continue until ALL are processed):
+
+PHASE A: KEYWORD MATCHING WITH EXAMPLE SCENARIOS
+   - Extract keywords from EXAMPLE CUSTOMER SCENARIOS field
+   - Compare customer scenario keywords with example scenario keywords
+   - Count exact keyword matches
+   - Count semantic keyword matches (same meaning, different words)
+   - Calculate: (Exact + Semantic matches) / Total keywords = Match percentage
+   - Record this percentage
+
+PHASE B: KEYWORD MATCHING WITH TAG LOGIC
+   - Extract keywords from TAG LOGIC field
+   - Compare customer scenario keywords with TAG LOGIC keywords
+   - Count exact keyword matches
+   - Count semantic keyword matches
+   - Calculate: (Exact + Semantic matches) / Total keywords = Match percentage
+   - Record this percentage
+
+PHASE C: SEMANTIC MEANING VALIDATION
+   - After keyword matching, check semantic alignment
+   - Does scenario describe same problem as TAG LOGIC indicates?
+   - Is scenario similar in meaning to EXAMPLE SCENARIOS?
+   - Score semantic alignment (0-100%)
+
+PHASE D: CALCULATE COMBINED SCORE
+   - Example Scenario Keyword Match: ___%
+   - Tag Logic Keyword Match: ___%
+   - Semantic Meaning Match: ___%
+   - Combined Score: (Example + Logic + Semantic) / 3 = ___%
+   - Record this score for this tag
+
+PHASE E: CONTINUE TO NEXT TAG
+   - Move to next tag
+   - Repeat Phases A-D for ALL remaining tags
+   - Do NOT stop until EVERY tag is processed
+
+STEP 3: RANKING AND SELECTION (After processing ALL tags)
+- Sort all tags by combined scores (highest to lowest)
+- Tags with 80%+ = HIGH confidence
+- Tags with 60-80% = MEDIUM confidence
+- Tags with 40-60% = LOW confidence
+- Select the highest scoring tag(s)
 
 2. MATCHING STRATEGY (CRITICAL - Follow this process precisely):
    
@@ -412,65 +520,84 @@ OUTPUT FORMAT:
             user_content = f"""CUSTOMER SERVICE SCENARIO TO ANALYZE:
 {scenario_text}
 
-STEP-BY-STEP ANALYSIS PROCESS:
+CRITICAL: You MUST process ALL tags in the mind map. Do NOT stop at the first match.
 
-STEP 1: EXTRACT KEY ELEMENTS FROM CUSTOMER SCENARIO
-- Identify the main issue/problem the customer is reporting
-- Extract key nouns (devices, services, features, accounts, subscriptions, etc.)
-- Extract key verbs/actions (watching, streaming, accessing, paying, cancelling, etc.)
-- Identify any technical terms, error messages, or specific features mentioned
-- Note any emotional indicators or urgency (frustrated, urgent, not working, etc.)
+MANDATORY ANALYSIS PROCESS - FOLLOW EXACTLY:
 
-STEP 2: SEMANTIC MATCHING WITH TAG LOGIC
-For each tag in the mind map, perform the following comparison:
+PHASE 1: KEYWORD EXTRACTION (Do this FIRST, before analyzing any tags)
+Extract ALL keywords from the customer scenario above:
+1. List ALL nouns (devices, services, features, accounts, subscriptions, error messages, etc.)
+2. List ALL verbs/actions (watching, streaming, accessing, paying, cancelling, blocking, etc.)
+3. List ALL problem descriptors (not working, error, issue, problem, blocked, failed, etc.)
+4. List ALL business/technical terms (VIP, subscription, payment, device, account, etc.)
+5. List ALL numbers, IDs, or specific identifiers
+6. List ALL emotional/urgency indicators (urgent, frustrated, cannot, unable, etc.)
 
-A. TAG LOGIC ANALYSIS:
-   - Read the TAG LOGIC field carefully
-   - Identify the core criteria/conditions described in the TAG LOGIC
-   - Check if the customer scenario matches these criteria:
-     * Does the scenario describe the same type of issue?
-     * Are the same concepts/features mentioned?
-     * Does the scenario fit the conditions described in TAG LOGIC?
-   - Score: How well does the scenario align with TAG LOGIC? (0-100%)
+Create a comprehensive keyword list. This is your matching foundation.
 
-B. EXAMPLE CUSTOMER SCENARIOS COMPARISON:
-   - Read the EXAMPLE CUSTOMER SCENARIOS field
-   - Compare the customer scenario with each example scenario:
-     * Are they describing the same problem?
-     * Do they use similar language or phrasing?
-     * Are the key concepts the same?
-     * Is the context/situation similar?
-   - Score: How similar is the scenario to the examples? (0-100%)
+PHASE 2: SYSTEMATIC TAG PROCESSING (MANDATORY - Process EVERY Tag)
+Count the total number of tags in the mind map. You MUST process ALL of them.
 
-C. COMBINED MATCHING SCORE:
-   - If both TAG LOGIC and EXAMPLE SCENARIOS match well (70%+ each) → HIGH confidence
-   - If TAG LOGIC matches well (70%+) but examples differ → MEDIUM confidence
-   - If only partial matches → LOW confidence
+For EACH tag (Tag 1, Tag 2, Tag 3... continue until ALL tags are processed):
 
-STEP 3: KEYWORD AND CONCEPT MAPPING
-For each potential matching tag, identify:
-- Direct keyword matches between scenario and TAG LOGIC
-- Direct keyword matches between scenario and EXAMPLE SCENARIOS
-- Semantic matches (same meaning, different words)
-- Related concepts (e.g., "subscription" relates to "payment", "VIP" relates to "premium")
+A. KEYWORD MATCHING WITH EXAMPLE SCENARIOS:
+   - Extract keywords from the EXAMPLE CUSTOMER SCENARIOS field of this tag
+   - Compare: How many keywords from customer scenario match keywords in example scenarios?
+   - Count exact matches
+   - Count semantic matches (same meaning, different words)
+   - Calculate: (Exact matches + Semantic matches) / Total keywords = Match percentage
+   - Record this percentage for this tag
 
-STEP 4: CONTEXTUAL ALIGNMENT
-- Consider the CATEGORY/SHEET to understand the tag's domain
-- Ensure the scenario fits within that domain context
-- Check if the scenario's urgency/severity matches the tag's typical use cases
+B. KEYWORD MATCHING WITH TAG LOGIC:
+   - Extract keywords from the TAG LOGIC field of this tag
+   - Compare: How many keywords from customer scenario match keywords in TAG LOGIC?
+   - Count exact matches
+   - Count semantic matches
+   - Calculate: (Exact matches + Semantic matches) / Total keywords = Match percentage
+   - Record this percentage for this tag
 
-STEP 5: FINAL RECOMMENDATION
-- Select tags with the highest combined matching scores
-- Prioritize tags where BOTH TAG LOGIC and EXAMPLE SCENARIOS align
-- If multiple tags match, recommend all relevant ones
-- Use the EXACT TAG NAME from the mind map
+C. SEMANTIC MEANING CHECK:
+   - After keyword matching, check if the MEANING aligns
+   - Does the scenario describe the same problem as TAG LOGIC indicates?
+   - Is the scenario similar in meaning to EXAMPLE SCENARIOS?
+   - Score semantic alignment (0-100%)
 
-STEP 6: DETAILED REASONING
-In your reasoning, explicitly state:
-- Which specific parts of TAG LOGIC match the scenario (quote or paraphrase)
-- Which EXAMPLE CUSTOMER SCENARIOS are similar and why
-- What keywords/concepts were matched
-- Why this tag is appropriate for this scenario
+D. CALCULATE COMBINED SCORE FOR THIS TAG:
+   - Example Scenario Keyword Match: ___%
+   - Tag Logic Keyword Match: ___%
+   - Semantic Meaning Match: ___%
+   - Combined Score: (Example + Logic + Semantic) / 3 = ___%
+   - Record this score
+
+E. MOVE TO NEXT TAG:
+   - Do NOT stop here
+   - Continue to the next tag
+   - Repeat steps A-D for ALL remaining tags
+   - Process EVERY SINGLE TAG in the mind map
+
+PHASE 3: RANKING AND SELECTION (After processing ALL tags)
+1. Sort all tags by their combined scores (highest to lowest)
+2. Identify the top-scoring tags:
+   - 80%+ = HIGH confidence
+   - 60-80% = MEDIUM confidence
+   - 40-60% = LOW confidence
+3. Select the tag(s) with the highest scores
+4. If multiple tags have similar high scores, recommend all of them
+
+PHASE 4: DETAILED REASONING (Required for selected tag(s))
+For each selected tag, explain:
+- Which keywords matched between scenario and EXAMPLE SCENARIOS (list them)
+- Which keywords matched between scenario and TAG LOGIC (list them)
+- What semantic meaning aligned
+- Why this tag is the best match (cite specific matching elements)
+- The calculated scores that led to this selection
+
+REMEMBER:
+- You MUST process ALL tags - do not skip any
+- Keyword matching is PRIMARY - use it first
+- Then validate with semantic meaning
+- Rank all tags before selecting
+- Provide detailed reasoning with keyword citations
 
 Output in English. Focus on technical and business aspects only."""
         else:
