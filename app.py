@@ -135,9 +135,31 @@ def get_mind_map_parser():
             return None
     else:
         # Try to load from file (backward compatibility)
-        if os.path.exists('Updated Mind Map.xlsx'):
+        # Priority: New organized file first, then old file
+        new_file = 'List of tags 2025.xlsx'
+        old_file = 'Updated Mind Map.xlsx'
+        
+        if os.path.exists(new_file):
             try:
-                mind_map_parser = MindMapParser('Updated Mind Map.xlsx')
+                print(f"[Parser] Loading new organized file: {new_file}")
+                mind_map_parser = MindMapParser(new_file)
+                return mind_map_parser
+            except Exception as e:
+                print(f"Error loading new mind map file: {e}")
+                # Fallback to old file if new file fails
+                if os.path.exists(old_file):
+                    try:
+                        print(f"[Parser] Falling back to old file: {old_file}")
+                        mind_map_parser = MindMapParser(old_file)
+                        return mind_map_parser
+                    except Exception as e2:
+                        print(f"Error loading old mind map file: {e2}")
+                        return None
+                return None
+        elif os.path.exists(old_file):
+            try:
+                print(f"[Parser] Loading old file: {old_file}")
+                mind_map_parser = MindMapParser(old_file)
                 return mind_map_parser
             except Exception as e:
                 print(f"Error loading mind map from file: {e}")

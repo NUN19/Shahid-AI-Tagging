@@ -73,37 +73,87 @@ class MindMapParser:
                     'columns': list(df.columns)
                 }
                 
-                # Try to identify tag columns (common patterns)
-                # Look for columns that might contain tags
-                tag_columns = []
-                for col in df.columns:
-                    col_str = str(col).lower()
-                    if any(keyword in col_str for keyword in ['tag', 'category', 'type', 'label', 'classification']):
-                        tag_columns.append(col)
+                # Check if this is the new organized format (has Full_Tag_Name, Tag_Logic, Customer_Scenarios)
+                is_organized_format = any(col in df.columns for col in ['Full_Tag_Name', 'Tag_Logic', 'Customer_Scenarios'])
                 
-                # If no obvious tag column found, use first column as potential tag column
-                if not tag_columns and len(df.columns) > 0:
-                    tag_columns = [df.columns[0]]
-                
-                # Extract tags from identified columns
-                for col in tag_columns:
+                if is_organized_format:
+                    # New organized format - use Full_Tag_Name as primary tag identifier
+                    tag_name_col = 'Full_Tag_Name' if 'Full_Tag_Name' in df.columns else None
+                    tag_id_col = 'Tag_ID' if 'Tag_ID' in df.columns else None
+                    tag_logic_col = 'Tag_Logic' if 'Tag_Logic' in df.columns else None
+                    customer_scenarios_col = 'Customer_Scenarios' if 'Customer_Scenarios' in df.columns else None
+                    sheet_name_col = 'Sheet_Name' if 'Sheet_Name' in df.columns else None
+                    
                     for idx, row in df.iterrows():
                         try:
-                            tag_value = str(row[col]).strip()
-                            if tag_value and tag_value.lower() not in ['nan', 'none', '', 'none', 'n/a']:
-                                # Create unique key for tag
-                                tag_key = f"{tag_value}_{sheet_name}_{idx}"
+                            # Get tag name from Full_Tag_Name column
+                            if tag_name_col:
+                                tag_value = str(row[tag_name_col]).strip()
+                            else:
+                                continue
+                            
+                            if tag_value and tag_value.lower() not in ['nan', 'none', '', 'n/a']:
+                                # Get tag ID if available
+                                tag_id = str(row[tag_id_col]).strip() if tag_id_col and pd.notna(row.get(tag_id_col)) else f"T{idx:04d}"
+                                
+                                # Get sheet name from column or use sheet name
+                                tag_sheet = str(row[sheet_name_col]).strip() if sheet_name_col and pd.notna(row.get(sheet_name_col)) else sheet_name
+                                
+                                # Get tag logic
+                                tag_logic = str(row[tag_logic_col]).strip() if tag_logic_col and pd.notna(row.get(tag_logic_col)) else ""
+                                
+                                # Get customer scenarios
+                                customer_scenarios = str(row[customer_scenarios_col]).strip() if customer_scenarios_col and pd.notna(row.get(customer_scenarios_col)) else ""
+                                
+                                # Create unique key for tag (use Tag_ID if available, otherwise use tag name + index)
+                                tag_key = f"{tag_id}_{tag_value}_{idx}" if tag_id_col else f"{tag_value}_{sheet_name}_{idx}"
+                                
                                 if tag_key not in self.tags:
                                     self.tags[tag_key] = {
+                                        'tag_id': tag_id,
                                         'tag_name': tag_value,
-                                        'sheet': sheet_name,
+                                        'sheet': tag_sheet,
                                         'row': idx,
-                                        'logic': self._extract_row_logic(row, df.columns),
+                                        'logic': tag_logic,
+                                        'customer_scenarios': customer_scenarios,
                                         'full_row': row.to_dict()
                                     }
                         except Exception as row_error:
                             # Skip problematic rows instead of crashing
+                            print(f"Warning: Error processing row {idx} in sheet '{sheet_name}': {row_error}")
                             continue
+                else:
+                    # Legacy format - use old extraction method
+                    # Try to identify tag columns (common patterns)
+                    tag_columns = []
+                    for col in df.columns:
+                        col_str = str(col).lower()
+                        if any(keyword in col_str for keyword in ['tag', 'category', 'type', 'label', 'classification']):
+                            tag_columns.append(col)
+                    
+                    # If no obvious tag column found, use first column as potential tag column
+                    if not tag_columns and len(df.columns) > 0:
+                        tag_columns = [df.columns[0]]
+                    
+                    # Extract tags from identified columns
+                    for col in tag_columns:
+                        for idx, row in df.iterrows():
+                            try:
+                                tag_value = str(row[col]).strip()
+                                if tag_value and tag_value.lower() not in ['nan', 'none', '', 'none', 'n/a']:
+                                    # Create unique key for tag
+                                    tag_key = f"{tag_value}_{sheet_name}_{idx}"
+                                    if tag_key not in self.tags:
+                                        self.tags[tag_key] = {
+                                            'tag_name': tag_value,
+                                            'sheet': sheet_name,
+                                            'row': idx,
+                                            'logic': self._extract_row_logic(row, df.columns),
+                                            'full_row': row.to_dict()
+                                        }
+                            except Exception as row_error:
+                                # Skip problematic rows instead of crashing
+                                continue
             except Exception as sheet_error:
                 # Skip problematic sheets instead of crashing
                 print(f"Warning: Error processing sheet '{sheet_name}': {sheet_error}, skipping...")
@@ -150,37 +200,68 @@ class MindMapParser:
                 summary.append(f"Total Rows: {len(df)}, Columns: {len(df.columns)}")
                 
                 if len(df.columns) > 0:
-                    summary.append(f"\nColumn Structure: {', '.join(str(col) for col in df.columns)}")
-                    summary.append("\n" + "-" * 80)
-                    summary.append("COMPLETE TAG LOGIC (All Rows with Full Details):")
-                    summary.append("-" * 80)
+                    # Check if this is the new organized format
+                    is_organized_format = any(col in df.columns for col in ['Full_Tag_Name', 'Tag_Logic', 'Customer_Scenarios'])
                     
-                    # Include ALL rows with complete logic, not just samples
-                    for idx, row in df.iterrows():
-                        try:
-                            row_details = []
-                            tag_name = None
-                            
-                            # Extract all column values for this row
-                            for col in df.columns:
-                                try:
-                                    val = str(row[col]).strip()
-                                    if val and val.lower() not in ['nan', 'none', '']:
-                                        # Identify potential tag name column
-                                        col_lower = str(col).lower()
-                                        if any(keyword in col_lower for keyword in ['tag', 'category', 'type', 'label', 'name', 'classification']):
-                                            if not tag_name:
-                                                tag_name = val
-                                        row_details.append(f"{col}: {val}")
-                                except:
-                                    continue
-                            
-                            if row_details:
-                                # Format: Tag Name (if found) | All Logic Details
-                                tag_prefix = f"TAG: {tag_name} | " if tag_name else ""
-                                summary.append(f"\nRow {idx}: {tag_prefix}{' | '.join(row_details)}")
-                        except Exception as row_error:
-                            continue
+                    if is_organized_format:
+                        # New organized format - present in a cleaner, more structured way
+                        summary.append(f"\nColumn Structure: {', '.join(str(col) for col in df.columns)}")
+                        summary.append("\n" + "-" * 80)
+                        summary.append("COMPLETE TAG LOGIC (Organized Format - All Tags with Full Details):")
+                        summary.append("-" * 80)
+                        
+                        for idx, row in df.iterrows():
+                            try:
+                                tag_id = str(row.get('Tag_ID', '')).strip() if 'Tag_ID' in df.columns and pd.notna(row.get('Tag_ID')) else f"T{idx:04d}"
+                                tag_name = str(row.get('Full_Tag_Name', '')).strip() if 'Full_Tag_Name' in df.columns and pd.notna(row.get('Full_Tag_Name')) else ""
+                                tag_sheet = str(row.get('Sheet_Name', '')).strip() if 'Sheet_Name' in df.columns and pd.notna(row.get('Sheet_Name')) else sheet_name
+                                tag_logic = str(row.get('Tag_Logic', '')).strip() if 'Tag_Logic' in df.columns and pd.notna(row.get('Tag_Logic')) else ""
+                                customer_scenarios = str(row.get('Customer_Scenarios', '')).strip() if 'Customer_Scenarios' in df.columns and pd.notna(row.get('Customer_Scenarios')) else ""
+                                
+                                if tag_name and tag_name.lower() not in ['nan', 'none', '']:
+                                    summary.append(f"\n[TAG ID: {tag_id}]")
+                                    summary.append(f"TAG NAME: {tag_name}")
+                                    summary.append(f"CATEGORY/SHEET: {tag_sheet}")
+                                    if tag_logic:
+                                        summary.append(f"TAG LOGIC: {tag_logic}")
+                                    if customer_scenarios:
+                                        summary.append(f"EXAMPLE CUSTOMER SCENARIOS: {customer_scenarios}")
+                                    summary.append("-" * 80)
+                            except Exception as row_error:
+                                continue
+                    else:
+                        # Legacy format - use old method
+                        summary.append(f"\nColumn Structure: {', '.join(str(col) for col in df.columns)}")
+                        summary.append("\n" + "-" * 80)
+                        summary.append("COMPLETE TAG LOGIC (All Rows with Full Details):")
+                        summary.append("-" * 80)
+                        
+                        # Include ALL rows with complete logic, not just samples
+                        for idx, row in df.iterrows():
+                            try:
+                                row_details = []
+                                tag_name = None
+                                
+                                # Extract all column values for this row
+                                for col in df.columns:
+                                    try:
+                                        val = str(row[col]).strip()
+                                        if val and val.lower() not in ['nan', 'none', '']:
+                                            # Identify potential tag name column
+                                            col_lower = str(col).lower()
+                                            if any(keyword in col_lower for keyword in ['tag', 'category', 'type', 'label', 'name', 'classification']):
+                                                if not tag_name:
+                                                    tag_name = val
+                                            row_details.append(f"{col}: {val}")
+                                    except:
+                                        continue
+                                
+                                if row_details:
+                                    # Format: Tag Name (if found) | All Logic Details
+                                    tag_prefix = f"TAG: {tag_name} | " if tag_name else ""
+                                    summary.append(f"\nRow {idx}: {tag_prefix}{' | '.join(row_details)}")
+                            except Exception as row_error:
+                                continue
                     
                     summary.append("\n" + "-" * 80)
             except Exception as e:

@@ -135,71 +135,100 @@ class AIAnalyzer:
         
         # Build detailed system prompt that helps AI understand tag logic and relate to scenarios
         # IMPORTANT: Add business-focused instructions to avoid safety filter triggers
+        # Check if we're using the organized format (has Tag_Logic and Customer_Scenarios)
+        is_organized_format = 'TAG LOGIC:' in mind_map_context or 'EXAMPLE CUSTOMER SCENARIOS:' in mind_map_context
+        
         if is_arabic:
             system_prompt = f"""You are an expert customer support tag classification system for a legitimate business service.
 
 CONTEXT: This is a business application for categorizing customer service requests. All scenarios are legitimate business inquiries about service usage, technical issues, or account management.
 
-TAG LOGIC MIND MAP (Complete Reference):
+TAG LOGIC MIND MAP (Complete Reference - Organized Format):
 {mind_map_context}
 
 YOUR TASK:
-1. CAREFULLY READ the complete tag logic in the mind map above. Each row contains a tag with its full logic/criteria.
-2. UNDERSTAND the relationship between tag logic and customer scenarios:
-   - Match keywords, phrases, and concepts from the scenario to the tag logic
-   - Consider synonyms, related terms, and contextual meaning
-   - Look for matches in ALL columns of each tag (not just tag names)
-   - Understand the complete logic/criteria for each tag before recommending
-3. ANALYZE the customer scenario and identify which tags from the mind map best match:
-   - Compare scenario content with tag logic in all columns
-   - Consider partial matches and related concepts
+1. CAREFULLY READ the complete tag information above. Each tag entry contains:
+   - TAG NAME: The exact tag name to recommend
+   - TAG LOGIC: Detailed criteria explaining when to use this tag
+   - EXAMPLE CUSTOMER SCENARIOS: Sample scenarios that match this tag (use these as reference patterns)
+   - CATEGORY/SHEET: The category this tag belongs to
+
+2. MATCHING STRATEGY:
+   - Compare the customer scenario with the TAG LOGIC (primary matching criteria)
+   - Compare the customer scenario with EXAMPLE CUSTOMER SCENARIOS (pattern matching)
+   - Look for keyword matches, semantic similarity, and contextual alignment
+   - Consider synonyms, related terms, and variations in phrasing
    - Multiple tags can apply if the scenario matches multiple tag logics
-4. RECOMMEND tags that have the strongest logical relationship to the scenario
+
+3. ANALYZE the customer scenario:
+   - Identify which tags have TAG LOGIC that matches the scenario
+   - Check if the scenario is similar to any EXAMPLE CUSTOMER SCENARIOS
+   - Consider the CATEGORY/SHEET to understand the tag's context
+   - Prioritize tags where both TAG LOGIC and EXAMPLE SCENARIOS align with the customer scenario
+
+4. RECOMMEND tags that have the strongest logical relationship:
+   - Use the exact TAG NAME from the mind map
+   - High confidence: Scenario closely matches both TAG LOGIC and EXAMPLE SCENARIOS
+   - Medium confidence: Scenario matches TAG LOGIC but differs from EXAMPLE SCENARIOS
+   - Low confidence: Partial match or related concept
 
 IMPORTANT: 
 - This is a business context. Focus on technical and business aspects only.
 - Use neutral, professional language. All terms refer to legitimate business operations.
-- You must understand the COMPLETE LOGIC of each tag before recommending it.
-- Match based on LOGIC and CONTEXT, not just exact keyword matching.
+- You must understand the COMPLETE TAG LOGIC before recommending.
+- Match based on LOGIC, CONTEXT, and EXAMPLE SCENARIOS, not just exact keyword matching.
 - Output in English only.
 
 OUTPUT FORMAT:
-- Recommended Tag(s): [exact tag names from mind map, can be multiple]
-- Confidence: [High/Medium/Low - based on how well scenario matches tag logic]
-- Reasoning: [detailed explanation showing HOW the scenario relates to the tag logic, cite specific logic elements that match]
-- Mind Map Reference: [sheet name and row number(s) of matched tags]"""
+- Recommended Tag(s): [exact TAG NAME(s) from mind map, can be multiple]
+- Confidence: [High/Medium/Low - based on how well scenario matches TAG LOGIC and EXAMPLE SCENARIOS]
+- Reasoning: [detailed explanation showing HOW the scenario relates to the TAG LOGIC, cite specific matching elements and compare with EXAMPLE SCENARIOS if applicable]
+- Mind Map Reference: [TAG ID and CATEGORY/SHEET of matched tags]"""
         else:
             system_prompt = f"""You are an expert customer support tag classification system for a legitimate business service.
 
 CONTEXT: This is a business application for categorizing customer service requests. All scenarios are legitimate business inquiries about service usage, technical issues, or account management.
 
-TAG LOGIC MIND MAP (Complete Reference):
+TAG LOGIC MIND MAP (Complete Reference - Organized Format):
 {mind_map_context}
 
 YOUR TASK:
-1. CAREFULLY READ the complete tag logic in the mind map above. Each row contains a tag with its full logic/criteria.
-2. UNDERSTAND the relationship between tag logic and customer scenarios:
-   - Match keywords, phrases, and concepts from the scenario to the tag logic
-   - Consider synonyms, related terms, and contextual meaning
-   - Look for matches in ALL columns of each tag (not just tag names)
-   - Understand the complete logic/criteria for each tag before recommending
-3. ANALYZE the customer scenario and identify which tags from the mind map best match:
-   - Compare scenario content with tag logic in all columns
-   - Consider partial matches and related concepts
+1. CAREFULLY READ the complete tag information above. Each tag entry contains:
+   - TAG NAME: The exact tag name to recommend
+   - TAG LOGIC: Detailed criteria explaining when to use this tag
+   - EXAMPLE CUSTOMER SCENARIOS: Sample scenarios that match this tag (use these as reference patterns)
+   - CATEGORY/SHEET: The category this tag belongs to
+
+2. MATCHING STRATEGY:
+   - Compare the customer scenario with the TAG LOGIC (primary matching criteria)
+   - Compare the customer scenario with EXAMPLE CUSTOMER SCENARIOS (pattern matching)
+   - Look for keyword matches, semantic similarity, and contextual alignment
+   - Consider synonyms, related terms, and variations in phrasing
    - Multiple tags can apply if the scenario matches multiple tag logics
-4. RECOMMEND tags that have the strongest logical relationship to the scenario
+
+3. ANALYZE the customer scenario:
+   - Identify which tags have TAG LOGIC that matches the scenario
+   - Check if the scenario is similar to any EXAMPLE CUSTOMER SCENARIOS
+   - Consider the CATEGORY/SHEET to understand the tag's context
+   - Prioritize tags where both TAG LOGIC and EXAMPLE SCENARIOS align with the customer scenario
+
+4. RECOMMEND tags that have the strongest logical relationship:
+   - Use the exact TAG NAME from the mind map
+   - High confidence: Scenario closely matches both TAG LOGIC and EXAMPLE SCENARIOS
+   - Medium confidence: Scenario matches TAG LOGIC but differs from EXAMPLE SCENARIOS
+   - Low confidence: Partial match or related concept
 
 IMPORTANT: 
 - This is a business context. Focus on technical and business aspects only.
 - Use neutral, professional language. All terms refer to legitimate business operations.
-- You must understand the COMPLETE LOGIC of each tag before recommending it.
-- Match based on LOGIC and CONTEXT, not just exact keyword matching.
+- You must understand the COMPLETE TAG LOGIC before recommending.
+- Match based on LOGIC, CONTEXT, and EXAMPLE SCENARIOS, not just exact keyword matching.
 
 OUTPUT FORMAT:
-- Recommended Tag(s): [exact tag names from mind map, can be multiple]
-- Confidence: [High/Medium/Low - based on how well scenario matches tag logic]
-- Reasoning: [detailed explanation showing HOW the scenario relates to the tag logic, cite specific logic elements that match]
-- Mind Map Reference: [sheet name and row number(s) of matched tags]"""
+- Recommended Tag(s): [exact TAG NAME(s) from mind map, can be multiple]
+- Confidence: [High/Medium/Low - based on how well scenario matches TAG LOGIC and EXAMPLE SCENARIOS]
+- Reasoning: [detailed explanation showing HOW the scenario relates to the TAG LOGIC, cite specific matching elements and compare with EXAMPLE SCENARIOS if applicable]
+- Mind Map Reference: [TAG ID and CATEGORY/SHEET of matched tags]"""
         
         # Build messages for AI
         messages = [

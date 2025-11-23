@@ -72,16 +72,28 @@ def check_env_file():
 
 def check_mind_map():
     """Check if mind map Excel file exists"""
-    mind_map_file = 'Updated Mind Map.xlsx'
-    if not os.path.exists(mind_map_file):
-        print(f"❌ Mind map file not found: {mind_map_file}")
+    # Priority: New organized file first, then old file
+    new_file = 'List of tags 2025.xlsx'
+    old_file = 'Updated Mind Map.xlsx'
+    
+    mind_map_file = None
+    if os.path.exists(new_file):
+        mind_map_file = new_file
+        print(f"📋 Using new organized file: {new_file}")
+    elif os.path.exists(old_file):
+        mind_map_file = old_file
+        print(f"📋 Using legacy file: {old_file}")
+    else:
+        print(f"❌ Mind map file not found. Expected: {new_file} or {old_file}")
         return False
     
     try:
         from mind_map_parser import MindMapParser
         parser = MindMapParser(mind_map_file)
         sheets = list(parser.data.keys())
+        tags = parser.get_all_tags()
         print(f"✅ Mind map file found with {len(sheets)} sheet(s): {', '.join(sheets)}")
+        print(f"✅ Extracted {len(tags)} unique tag(s)")
         return True
     except Exception as e:
         print(f"❌ Error reading mind map file: {str(e)}")
