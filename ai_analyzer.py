@@ -153,24 +153,108 @@ YOUR TASK:
    - EXAMPLE CUSTOMER SCENARIOS: Sample scenarios that match this tag (use these as reference patterns)
    - CATEGORY/SHEET: The category this tag belongs to
 
-2. MATCHING STRATEGY:
-   - Compare the customer scenario with the TAG LOGIC (primary matching criteria)
-   - Compare the customer scenario with EXAMPLE CUSTOMER SCENARIOS (pattern matching)
-   - Look for keyword matches, semantic similarity, and contextual alignment
-   - Consider synonyms, related terms, and variations in phrasing
-   - Multiple tags can apply if the scenario matches multiple tag logics
+2. MATCHING STRATEGY (CRITICAL - Follow this process precisely):
+   
+   A. DUAL-MATCHING APPROACH:
+      - PRIMARY MATCH: Compare customer scenario with TAG LOGIC field
+        * Extract key concepts from TAG LOGIC (what conditions must be met)
+        * Check if customer scenario describes these same conditions
+        * Look for semantic equivalence, not just exact word matches
+      
+      - SECONDARY MATCH: Compare customer scenario with EXAMPLE CUSTOMER SCENARIOS
+        * These examples show REAL scenarios that use this tag
+        * If customer scenario is similar to examples, it's likely a match
+        * Compare language patterns, problem descriptions, and context
+      
+      - COMBINED SCORING:
+        * HIGH confidence: Both TAG LOGIC (80%+) AND EXAMPLE SCENARIOS (80%+) match
+        * MEDIUM confidence: TAG LOGIC matches (70%+) but examples differ
+        * LOW confidence: Only partial matches or weak alignment
+   
+   B. SEMANTIC ANALYSIS:
+      - Extract core meaning from customer scenario (not just keywords)
+      - Match the MEANING with TAG LOGIC requirements
+      - Match the MEANING with EXAMPLE SCENARIOS patterns
+      - Consider synonyms, related terms, and contextual variations
+      - Understand that same problem can be described differently
+   
+   C. KEYWORD AND CONCEPT EXTRACTION:
+      - Identify technical terms, service names, features mentioned
+      - Match these with terms in TAG LOGIC and EXAMPLE SCENARIOS
+      - Look for both exact matches and conceptual matches
+      - Consider abbreviations, variations, and related terminology
+   
+   D. CONTEXTUAL UNDERSTANDING:
+      - Understand the business context (subscription, device, payment, etc.)
+      - Match context with CATEGORY/SHEET information
+      - Ensure scenario fits the tag's intended use case
+      - Multiple tags can apply if scenario matches multiple tag logics
 
-3. ANALYZE the customer scenario:
-   - Identify which tags have TAG LOGIC that matches the scenario
-   - Check if the scenario is similar to any EXAMPLE CUSTOMER SCENARIOS
-   - Consider the CATEGORY/SHEET to understand the tag's context
-   - Prioritize tags where both TAG LOGIC and EXAMPLE SCENARIOS align with the customer scenario
+3. ANALYZE the customer scenario (DETAILED PROCESS):
+   
+   For EACH tag in the mind map, perform this analysis:
+   
+   a. TAG LOGIC EVALUATION:
+      - Read the TAG LOGIC field completely
+      - Identify the specific conditions/criteria it describes
+      - Ask: "Does the customer scenario meet these conditions?"
+      - Check for:
+        * Same type of issue/problem
+        * Same features/services involved
+        * Same user situation/context
+        * Same technical requirements
+   
+   b. EXAMPLE SCENARIOS COMPARISON:
+      - Read ALL EXAMPLE CUSTOMER SCENARIOS for this tag
+      - Compare customer scenario with each example:
+        * Similar problem description?
+        * Similar language/terminology?
+        * Similar context/situation?
+        * Similar user behavior or issue?
+      - If customer scenario is similar to examples, it's a strong match
+   
+   c. CROSS-REFERENCE VALIDATION:
+      - If TAG LOGIC matches but examples differ → verify if scenario still fits
+      - If examples match but TAG LOGIC seems different → re-read TAG LOGIC carefully
+      - Best matches: Both TAG LOGIC and examples align
+   
+   d. PRIORITIZATION:
+      - Tags where BOTH TAG LOGIC and EXAMPLE SCENARIOS match → HIGHEST priority
+      - Tags where TAG LOGIC matches strongly → HIGH priority
+      - Tags where only examples match → MEDIUM priority
+      - Consider CATEGORY/SHEET to understand tag's domain context
 
 4. RECOMMEND tags that have the strongest logical relationship:
-   - Use the exact TAG NAME from the mind map
-   - High confidence: Scenario closely matches both TAG LOGIC and EXAMPLE SCENARIOS
-   - Medium confidence: Scenario matches TAG LOGIC but differs from EXAMPLE SCENARIOS
-   - Low confidence: Partial match or related concept
+   
+   SELECTION CRITERIA:
+   - Use the EXACT TAG NAME from the mind map (from Full_Tag_Name field)
+   - Do NOT modify, abbreviate, or paraphrase tag names
+   - Can recommend multiple tags if scenario matches multiple tag logics
+   
+   CONFIDENCE LEVELS:
+   - HIGH confidence: 
+     * Scenario matches TAG LOGIC criteria (80%+ alignment)
+     * Scenario is similar to EXAMPLE CUSTOMER SCENARIOS (80%+ similarity)
+     * Key concepts, terminology, and context all align
+     * Clear, unambiguous match
+   
+   - MEDIUM confidence:
+     * Scenario matches TAG LOGIC criteria (70%+ alignment)
+     * But differs from EXAMPLE SCENARIOS OR examples are not provided
+     * Core concepts match but some details differ
+     * Still a valid match but less certain
+   
+   - LOW confidence:
+     * Only partial match with TAG LOGIC (50-70% alignment)
+     * Scenario is related but not exactly matching
+     * Some concepts align but key elements differ
+     * Use when no better matches exist
+   
+   REASONING REQUIREMENTS:
+   - MUST cite specific parts of TAG LOGIC that match
+   - MUST reference EXAMPLE CUSTOMER SCENARIOS if they're similar
+   - MUST explain WHY the scenario fits the tag
+   - MUST identify key matching elements (keywords, concepts, context)
 
 IMPORTANT: 
 - This is a business context. Focus on technical and business aspects only.
@@ -199,24 +283,108 @@ YOUR TASK:
    - EXAMPLE CUSTOMER SCENARIOS: Sample scenarios that match this tag (use these as reference patterns)
    - CATEGORY/SHEET: The category this tag belongs to
 
-2. MATCHING STRATEGY:
-   - Compare the customer scenario with the TAG LOGIC (primary matching criteria)
-   - Compare the customer scenario with EXAMPLE CUSTOMER SCENARIOS (pattern matching)
-   - Look for keyword matches, semantic similarity, and contextual alignment
-   - Consider synonyms, related terms, and variations in phrasing
-   - Multiple tags can apply if the scenario matches multiple tag logics
+2. MATCHING STRATEGY (CRITICAL - Follow this process precisely):
+   
+   A. DUAL-MATCHING APPROACH:
+      - PRIMARY MATCH: Compare customer scenario with TAG LOGIC field
+        * Extract key concepts from TAG LOGIC (what conditions must be met)
+        * Check if customer scenario describes these same conditions
+        * Look for semantic equivalence, not just exact word matches
+      
+      - SECONDARY MATCH: Compare customer scenario with EXAMPLE CUSTOMER SCENARIOS
+        * These examples show REAL scenarios that use this tag
+        * If customer scenario is similar to examples, it's likely a match
+        * Compare language patterns, problem descriptions, and context
+      
+      - COMBINED SCORING:
+        * HIGH confidence: Both TAG LOGIC (80%+) AND EXAMPLE SCENARIOS (80%+) match
+        * MEDIUM confidence: TAG LOGIC matches (70%+) but examples differ
+        * LOW confidence: Only partial matches or weak alignment
+   
+   B. SEMANTIC ANALYSIS:
+      - Extract core meaning from customer scenario (not just keywords)
+      - Match the MEANING with TAG LOGIC requirements
+      - Match the MEANING with EXAMPLE SCENARIOS patterns
+      - Consider synonyms, related terms, and contextual variations
+      - Understand that same problem can be described differently
+   
+   C. KEYWORD AND CONCEPT EXTRACTION:
+      - Identify technical terms, service names, features mentioned
+      - Match these with terms in TAG LOGIC and EXAMPLE SCENARIOS
+      - Look for both exact matches and conceptual matches
+      - Consider abbreviations, variations, and related terminology
+   
+   D. CONTEXTUAL UNDERSTANDING:
+      - Understand the business context (subscription, device, payment, etc.)
+      - Match context with CATEGORY/SHEET information
+      - Ensure scenario fits the tag's intended use case
+      - Multiple tags can apply if scenario matches multiple tag logics
 
-3. ANALYZE the customer scenario:
-   - Identify which tags have TAG LOGIC that matches the scenario
-   - Check if the scenario is similar to any EXAMPLE CUSTOMER SCENARIOS
-   - Consider the CATEGORY/SHEET to understand the tag's context
-   - Prioritize tags where both TAG LOGIC and EXAMPLE SCENARIOS align with the customer scenario
+3. ANALYZE the customer scenario (DETAILED PROCESS):
+   
+   For EACH tag in the mind map, perform this analysis:
+   
+   a. TAG LOGIC EVALUATION:
+      - Read the TAG LOGIC field completely
+      - Identify the specific conditions/criteria it describes
+      - Ask: "Does the customer scenario meet these conditions?"
+      - Check for:
+        * Same type of issue/problem
+        * Same features/services involved
+        * Same user situation/context
+        * Same technical requirements
+   
+   b. EXAMPLE SCENARIOS COMPARISON:
+      - Read ALL EXAMPLE CUSTOMER SCENARIOS for this tag
+      - Compare customer scenario with each example:
+        * Similar problem description?
+        * Similar language/terminology?
+        * Similar context/situation?
+        * Similar user behavior or issue?
+      - If customer scenario is similar to examples, it's a strong match
+   
+   c. CROSS-REFERENCE VALIDATION:
+      - If TAG LOGIC matches but examples differ → verify if scenario still fits
+      - If examples match but TAG LOGIC seems different → re-read TAG LOGIC carefully
+      - Best matches: Both TAG LOGIC and examples align
+   
+   d. PRIORITIZATION:
+      - Tags where BOTH TAG LOGIC and EXAMPLE SCENARIOS match → HIGHEST priority
+      - Tags where TAG LOGIC matches strongly → HIGH priority
+      - Tags where only examples match → MEDIUM priority
+      - Consider CATEGORY/SHEET to understand tag's domain context
 
 4. RECOMMEND tags that have the strongest logical relationship:
-   - Use the exact TAG NAME from the mind map
-   - High confidence: Scenario closely matches both TAG LOGIC and EXAMPLE SCENARIOS
-   - Medium confidence: Scenario matches TAG LOGIC but differs from EXAMPLE SCENARIOS
-   - Low confidence: Partial match or related concept
+   
+   SELECTION CRITERIA:
+   - Use the EXACT TAG NAME from the mind map (from Full_Tag_Name field)
+   - Do NOT modify, abbreviate, or paraphrase tag names
+   - Can recommend multiple tags if scenario matches multiple tag logics
+   
+   CONFIDENCE LEVELS:
+   - HIGH confidence: 
+     * Scenario matches TAG LOGIC criteria (80%+ alignment)
+     * Scenario is similar to EXAMPLE CUSTOMER SCENARIOS (80%+ similarity)
+     * Key concepts, terminology, and context all align
+     * Clear, unambiguous match
+   
+   - MEDIUM confidence:
+     * Scenario matches TAG LOGIC criteria (70%+ alignment)
+     * But differs from EXAMPLE SCENARIOS OR examples are not provided
+     * Core concepts match but some details differ
+     * Still a valid match but less certain
+   
+   - LOW confidence:
+     * Only partial match with TAG LOGIC (50-70% alignment)
+     * Scenario is related but not exactly matching
+     * Some concepts align but key elements differ
+     * Use when no better matches exist
+   
+   REASONING REQUIREMENTS:
+   - MUST cite specific parts of TAG LOGIC that match
+   - MUST reference EXAMPLE CUSTOMER SCENARIOS if they're similar
+   - MUST explain WHY the scenario fits the tag
+   - MUST identify key matching elements (keywords, concepts, context)
 
 IMPORTANT: 
 - This is a business context. Focus on technical and business aspects only.
@@ -239,8 +407,74 @@ OUTPUT FORMAT:
         ]
         
         # Use original scenario text verbatim - no neutralization
-        # Add user scenario with detailed instructions for better tag logic matching
-        user_content = f"""CUSTOMER SERVICE SCENARIO TO ANALYZE:
+        # Enhanced user content with detailed step-by-step matching instructions
+        if is_organized_format:
+            user_content = f"""CUSTOMER SERVICE SCENARIO TO ANALYZE:
+{scenario_text}
+
+STEP-BY-STEP ANALYSIS PROCESS:
+
+STEP 1: EXTRACT KEY ELEMENTS FROM CUSTOMER SCENARIO
+- Identify the main issue/problem the customer is reporting
+- Extract key nouns (devices, services, features, accounts, subscriptions, etc.)
+- Extract key verbs/actions (watching, streaming, accessing, paying, cancelling, etc.)
+- Identify any technical terms, error messages, or specific features mentioned
+- Note any emotional indicators or urgency (frustrated, urgent, not working, etc.)
+
+STEP 2: SEMANTIC MATCHING WITH TAG LOGIC
+For each tag in the mind map, perform the following comparison:
+
+A. TAG LOGIC ANALYSIS:
+   - Read the TAG LOGIC field carefully
+   - Identify the core criteria/conditions described in the TAG LOGIC
+   - Check if the customer scenario matches these criteria:
+     * Does the scenario describe the same type of issue?
+     * Are the same concepts/features mentioned?
+     * Does the scenario fit the conditions described in TAG LOGIC?
+   - Score: How well does the scenario align with TAG LOGIC? (0-100%)
+
+B. EXAMPLE CUSTOMER SCENARIOS COMPARISON:
+   - Read the EXAMPLE CUSTOMER SCENARIOS field
+   - Compare the customer scenario with each example scenario:
+     * Are they describing the same problem?
+     * Do they use similar language or phrasing?
+     * Are the key concepts the same?
+     * Is the context/situation similar?
+   - Score: How similar is the scenario to the examples? (0-100%)
+
+C. COMBINED MATCHING SCORE:
+   - If both TAG LOGIC and EXAMPLE SCENARIOS match well (70%+ each) → HIGH confidence
+   - If TAG LOGIC matches well (70%+) but examples differ → MEDIUM confidence
+   - If only partial matches → LOW confidence
+
+STEP 3: KEYWORD AND CONCEPT MAPPING
+For each potential matching tag, identify:
+- Direct keyword matches between scenario and TAG LOGIC
+- Direct keyword matches between scenario and EXAMPLE SCENARIOS
+- Semantic matches (same meaning, different words)
+- Related concepts (e.g., "subscription" relates to "payment", "VIP" relates to "premium")
+
+STEP 4: CONTEXTUAL ALIGNMENT
+- Consider the CATEGORY/SHEET to understand the tag's domain
+- Ensure the scenario fits within that domain context
+- Check if the scenario's urgency/severity matches the tag's typical use cases
+
+STEP 5: FINAL RECOMMENDATION
+- Select tags with the highest combined matching scores
+- Prioritize tags where BOTH TAG LOGIC and EXAMPLE SCENARIOS align
+- If multiple tags match, recommend all relevant ones
+- Use the EXACT TAG NAME from the mind map
+
+STEP 6: DETAILED REASONING
+In your reasoning, explicitly state:
+- Which specific parts of TAG LOGIC match the scenario (quote or paraphrase)
+- Which EXAMPLE CUSTOMER SCENARIOS are similar and why
+- What keywords/concepts were matched
+- Why this tag is appropriate for this scenario
+
+Output in English. Focus on technical and business aspects only."""
+        else:
+            user_content = f"""CUSTOMER SERVICE SCENARIO TO ANALYZE:
 {scenario_text}
 
 ANALYSIS INSTRUCTIONS:
