@@ -146,25 +146,25 @@ CONTEXT: This is a business application for categorizing customer service reques
 TAG LOGIC MIND MAP (Complete Reference - Organized Format):
 {mind_map_context}
 
-CRITICAL INSTRUCTION: You MUST analyze ALL tags in the mind map. Count the total number of tags and process EVERY SINGLE ONE. Do NOT stop at the first match or skip any tags.
+IMPORTANT: Please analyze all tags in the mind map systematically. Review each tag to ensure accurate classification. Process all available tags before making recommendations.
 
-YOUR TASK - MANDATORY PROCESS:
+YOUR TASK:
 
 STEP 1: KEYWORD EXTRACTION (Do this FIRST)
-Before analyzing any tags, extract ALL keywords from the customer scenario:
-- Technical terms (devices, services, features, error messages)
+Before analyzing any tags, extract relevant terms from the customer scenario:
+- Technical terms (devices, services, features, system messages)
 - Action verbs (watching, streaming, paying, cancelling, accessing)
-- Problem descriptors (not working, blocked, error, issue)
+- Problem descriptors (not working, error, issue, technical difficulty)
 - Business terms (subscription, VIP, account, payment, device)
 - Numbers, IDs, or specific identifiers
-- Emotional/urgency indicators (urgent, frustrated, cannot, unable)
+- Priority indicators (urgent, important, needs attention)
 
 Create a comprehensive keyword list. This is your matching foundation.
 
-STEP 2: SYSTEMATIC TAG PROCESSING (MANDATORY - Process ALL Tags)
-Count how many tags are in the mind map. You MUST process ALL of them systematically.
+STEP 2: SYSTEMATIC TAG PROCESSING
+Please review all tags in the mind map. For each tag, perform the following analysis to find the best match:
 
-For EACH tag (Tag 1, Tag 2, Tag 3... continue until ALL are processed):
+For each tag in the mind map:
 
 PHASE A: KEYWORD MATCHING WITH EXAMPLE SCENARIOS
    - Extract keywords from EXAMPLE CUSTOMER SCENARIOS field
@@ -196,9 +196,9 @@ PHASE D: CALCULATE COMBINED SCORE
    - Record this score for this tag
 
 PHASE E: CONTINUE TO NEXT TAG
-   - Move to next tag
-   - Repeat Phases A-D for ALL remaining tags
-   - Do NOT stop until EVERY tag is processed
+   - Proceed to the next tag
+   - Repeat Phases A-D for all remaining tags
+   - Continue until all tags have been reviewed
 
 STEP 3: RANKING AND SELECTION (After processing ALL tags)
 - Sort all tags by combined scores (highest to lowest)
@@ -207,7 +207,7 @@ STEP 3: RANKING AND SELECTION (After processing ALL tags)
 - Tags with 40-60% = LOW confidence
 - Select the highest scoring tag(s)
 
-2. MATCHING STRATEGY (CRITICAL - Follow this process precisely):
+2. MATCHING STRATEGY (Please follow this process):
    
    A. DUAL-MATCHING APPROACH:
       - PRIMARY MATCH: Compare customer scenario with TAG LOGIC field
@@ -282,7 +282,7 @@ STEP 3: RANKING AND SELECTION (After processing ALL tags)
    
    SELECTION CRITERIA:
    - Use the EXACT TAG NAME from the mind map (from Full_Tag_Name field)
-   - Do NOT modify, abbreviate, or paraphrase tag names
+   - Please use the exact tag name without modification, abbreviation, or paraphrasing
    - Can recommend multiple tags if scenario matches multiple tag logics
    
    CONFIDENCE LEVELS:
@@ -305,10 +305,10 @@ STEP 3: RANKING AND SELECTION (After processing ALL tags)
      * Use when no better matches exist
    
    REASONING REQUIREMENTS:
-   - MUST cite specific parts of TAG LOGIC that match
-   - MUST reference EXAMPLE CUSTOMER SCENARIOS if they're similar
-   - MUST explain WHY the scenario fits the tag
-   - MUST identify key matching elements (keywords, concepts, context)
+   - Please cite specific parts of TAG LOGIC that match
+   - Please reference EXAMPLE CUSTOMER SCENARIOS if they're similar
+   - Please explain WHY the scenario fits the tag
+   - Please identify key matching elements (keywords, concepts, context)
 
 IMPORTANT: 
 - This is a business context. Focus on technical and business aspects only.
@@ -330,25 +330,25 @@ CONTEXT: This is a business application for categorizing customer service reques
 TAG LOGIC MIND MAP (Complete Reference - Organized Format):
 {mind_map_context}
 
-CRITICAL INSTRUCTION: You MUST analyze ALL tags in the mind map. Count the total number of tags and process EVERY SINGLE ONE. Do NOT stop at the first match or skip any tags.
+IMPORTANT: Please analyze all tags in the mind map systematically. Review each tag to ensure accurate classification. Process all available tags before making recommendations.
 
-YOUR TASK - MANDATORY PROCESS:
+YOUR TASK:
 
 STEP 1: KEYWORD EXTRACTION (Do this FIRST)
-Before analyzing any tags, extract ALL keywords from the customer scenario:
-- Technical terms (devices, services, features, error messages)
+Before analyzing any tags, extract relevant terms from the customer scenario:
+- Technical terms (devices, services, features, system messages)
 - Action verbs (watching, streaming, paying, cancelling, accessing)
-- Problem descriptors (not working, blocked, error, issue)
+- Problem descriptors (not working, error, issue, technical difficulty)
 - Business terms (subscription, VIP, account, payment, device)
 - Numbers, IDs, or specific identifiers
-- Emotional/urgency indicators (urgent, frustrated, cannot, unable)
+- Priority indicators (urgent, important, needs attention)
 
 Create a comprehensive keyword list. This is your matching foundation.
 
-STEP 2: SYSTEMATIC TAG PROCESSING (MANDATORY - Process ALL Tags)
-Count how many tags are in the mind map. You MUST process ALL of them systematically.
+STEP 2: SYSTEMATIC TAG PROCESSING
+Please review all tags in the mind map. For each tag, perform the following analysis to find the best match:
 
-For EACH tag (Tag 1, Tag 2, Tag 3... continue until ALL are processed):
+For each tag in the mind map:
 
 PHASE A: KEYWORD MATCHING WITH EXAMPLE SCENARIOS
    - Extract keywords from EXAMPLE CUSTOMER SCENARIOS field
@@ -380,9 +380,9 @@ PHASE D: CALCULATE COMBINED SCORE
    - Record this score for this tag
 
 PHASE E: CONTINUE TO NEXT TAG
-   - Move to next tag
-   - Repeat Phases A-D for ALL remaining tags
-   - Do NOT stop until EVERY tag is processed
+   - Proceed to the next tag
+   - Repeat Phases A-D for all remaining tags
+   - Continue until all tags have been reviewed
 
 STEP 3: RANKING AND SELECTION (After processing ALL tags)
 - Sort all tags by combined scores (highest to lowest)
@@ -391,7 +391,7 @@ STEP 3: RANKING AND SELECTION (After processing ALL tags)
 - Tags with 40-60% = LOW confidence
 - Select the highest scoring tag(s)
 
-2. MATCHING STRATEGY (CRITICAL - Follow this process precisely):
+2. MATCHING STRATEGY (Please follow this process):
    
    A. DUAL-MATCHING APPROACH:
       - PRIMARY MATCH: Compare customer scenario with TAG LOGIC field
@@ -466,7 +466,7 @@ STEP 3: RANKING AND SELECTION (After processing ALL tags)
    
    SELECTION CRITERIA:
    - Use the EXACT TAG NAME from the mind map (from Full_Tag_Name field)
-   - Do NOT modify, abbreviate, or paraphrase tag names
+   - Please use the exact tag name without modification, abbreviation, or paraphrasing
    - Can recommend multiple tags if scenario matches multiple tag logics
    
    CONFIDENCE LEVELS:
@@ -489,10 +489,10 @@ STEP 3: RANKING AND SELECTION (After processing ALL tags)
      * Use when no better matches exist
    
    REASONING REQUIREMENTS:
-   - MUST cite specific parts of TAG LOGIC that match
-   - MUST reference EXAMPLE CUSTOMER SCENARIOS if they're similar
-   - MUST explain WHY the scenario fits the tag
-   - MUST identify key matching elements (keywords, concepts, context)
+   - Please cite specific parts of TAG LOGIC that match
+   - Please reference EXAMPLE CUSTOMER SCENARIOS if they're similar
+   - Please explain WHY the scenario fits the tag
+   - Please identify key matching elements (keywords, concepts, context)
 
 IMPORTANT: 
 - This is a business context. Focus on technical and business aspects only.
@@ -520,25 +520,25 @@ OUTPUT FORMAT:
             user_content = f"""CUSTOMER SERVICE SCENARIO TO ANALYZE:
 {scenario_text}
 
-CRITICAL: You MUST process ALL tags in the mind map. Do NOT stop at the first match.
+IMPORTANT: Please review all tags in the mind map systematically to ensure accurate classification.
 
-MANDATORY ANALYSIS PROCESS - FOLLOW EXACTLY:
+ANALYSIS PROCESS - Please follow these steps:
 
 PHASE 1: KEYWORD EXTRACTION (Do this FIRST, before analyzing any tags)
-Extract ALL keywords from the customer scenario above:
-1. List ALL nouns (devices, services, features, accounts, subscriptions, error messages, etc.)
-2. List ALL verbs/actions (watching, streaming, accessing, paying, cancelling, blocking, etc.)
-3. List ALL problem descriptors (not working, error, issue, problem, blocked, failed, etc.)
-4. List ALL business/technical terms (VIP, subscription, payment, device, account, etc.)
-5. List ALL numbers, IDs, or specific identifiers
-6. List ALL emotional/urgency indicators (urgent, frustrated, cannot, unable, etc.)
+Extract relevant terms from the customer scenario above:
+1. Identify nouns (devices, services, features, accounts, subscriptions, system messages, etc.)
+2. Identify verbs/actions (watching, streaming, accessing, paying, cancelling, etc.)
+3. Identify problem descriptors (not working, error, issue, technical difficulty, etc.)
+4. Identify business/technical terms (VIP, subscription, payment, device, account, etc.)
+5. Identify numbers, IDs, or specific identifiers
+6. Identify priority indicators (urgent, important, needs attention, etc.)
 
 Create a comprehensive keyword list. This is your matching foundation.
 
-PHASE 2: SYSTEMATIC TAG PROCESSING (MANDATORY - Process EVERY Tag)
-Count the total number of tags in the mind map. You MUST process ALL of them.
+PHASE 2: SYSTEMATIC TAG PROCESSING
+Please review all tags in the mind map. For each tag, perform the following analysis:
 
-For EACH tag (Tag 1, Tag 2, Tag 3... continue until ALL tags are processed):
+For each tag in the mind map:
 
 A. KEYWORD MATCHING WITH EXAMPLE SCENARIOS:
    - Extract keywords from the EXAMPLE CUSTOMER SCENARIOS field of this tag
@@ -570,10 +570,9 @@ D. CALCULATE COMBINED SCORE FOR THIS TAG:
    - Record this score
 
 E. MOVE TO NEXT TAG:
-   - Do NOT stop here
-   - Continue to the next tag
-   - Repeat steps A-D for ALL remaining tags
-   - Process EVERY SINGLE TAG in the mind map
+   - Proceed to the next tag
+   - Repeat steps A-D for all remaining tags
+   - Continue until all tags have been reviewed
 
 PHASE 3: RANKING AND SELECTION (After processing ALL tags)
 1. Sort all tags by their combined scores (highest to lowest)
@@ -593,8 +592,8 @@ For each selected tag, explain:
 - The calculated scores that led to this selection
 
 REMEMBER:
-- You MUST process ALL tags - do not skip any
-- Keyword matching is PRIMARY - use it first
+- Please review all tags to ensure comprehensive analysis
+- Keyword matching is the primary method - use it first
 - Then validate with semantic meaning
 - Rank all tags before selecting
 - Provide detailed reasoning with keyword citations
