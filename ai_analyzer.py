@@ -1510,6 +1510,81 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         
         return unique_tags
     
+    def _normalize_tag_id(self, tag_id):
+        """Normalize tag ID to standard format (T + 4 digits, e.g., T0009)"""
+        if not tag_id:
+            return None
+        
+        # Remove non-alphanumeric characters and convert to uppercase
+        cleaned = re.sub(r'[^\w]', '', str(tag_id).upper())
+        
+        # Extract the number part
+        if cleaned.startswith('T'):
+            number_part = cleaned[1:]
+        else:
+            number_part = cleaned
+        
+        # Pad with leading zeros to ensure 4 digits, then add T prefix
+        try:
+            number = int(number_part) if number_part else 0
+            normalized = f"T{number:04d}"  # Format as T + 4 digits with leading zeros
+            return normalized
+        except ValueError:
+            # If not a valid number, try to match as-is
+            return f"T{number_part.zfill(4)}" if number_part else None
+    
+    def _get_tag_by_id(self, tag_id):
+        """Get tag name by tag ID (e.g., T0009) - optimized for List of tags 2025.xlsx format"""
+        all_tags = self.mind_map_parser.get_all_tags()
+        if not all_tags:
+            return None
+        
+        # Normalize the input tag_id to standard format (T + 4 digits)
+        tag_id_normalized = self._normalize_tag_id(tag_id)
+        if not tag_id_normalized:
+            return None
+        
+        # Search through all tags
+        for tag_data in all_tags.values():
+            if 'tag_id' in tag_data:
+                tag_id_from_map = str(tag_data['tag_id']).strip()
+                # Normalize the tag_id from map to same format
+                tag_id_from_map_normalized = self._normalize_tag_id(tag_id_from_map)
+                
+                if tag_id_normalized == tag_id_from_map_normalized:
+                    # Return the Full_Tag_Name (stored as 'tag_name' in the structure)
+                    return tag_data.get('tag_name')
+        
+        return None
+    
+    def _extract_tag_ids_from_text(self, text):
+        """Extract tag IDs (like T0009, T0010) from text - optimized for List of tags 2025.xlsx format"""
+        # Pattern to match tag IDs: T followed by 4 digits (T0001, T0009, etc.)
+        # This matches the exact format from the Excel file
+        patterns = [
+            r'\bT\d{4}\b',  # T0009, T0010, etc. (exactly 4 digits after T)
+            r'\bT\d{1,3}\b',  # Also match T9, T09, T009 and normalize to T0009
+            r'\btag\s+(?:id|#)?\s*[:\-]?\s*(T\d{1,4})',  # tag ID: T0009 or tag ID: T9
+            r'(?:tag|tags?)\s+(T\d{1,4})',  # tag T0009 or tag T9
+            r'\[(T\d{1,4})\]',  # [T0009] or [T9]
+            r'\(T\d{1,4}\)',  # (T0009) or (T9)
+            r'T\d{1,4}(?=\s|,|;|\.|$)',  # T0009 at end of word/sentence
+        ]
+        
+        found_ids = []
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                # Handle tuple results from groups
+                tag_id = match if isinstance(match, str) else match[0] if match else None
+                if tag_id:
+                    # Normalize to standard format (T + 4 digits)
+                    normalized_id = self._normalize_tag_id(tag_id)
+                    if normalized_id and normalized_id not in found_ids:
+                        found_ids.append(normalized_id)
+        
+        return found_ids
+    
     def _validate_and_match_tags(self, extracted_tags):
         """Validate extracted tags against mind map and return matched tags with scores"""
         all_tags = self.mind_map_parser.get_all_tags()
@@ -1525,6 +1600,18 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
             if not extracted_tag or len(extracted_tag.strip()) < 3:
                 continue
             
+            # Check if it's a tag ID first (e.g., T0009, T9, T09) - optimized for List of tags 2025.xlsx
+            extracted_tag_clean = extracted_tag.strip().upper()
+            if re.match(r'^T\d{1,4}$', extracted_tag_clean):
+                # Normalize to standard format and get tag name
+                normalized_id = self._normalize_tag_id(extracted_tag_clean)
+                if normalized_id:
+                    tag_name = self._get_tag_by_id(normalized_id)
+                    if tag_name and tag_name not in validated_tags:
+                        validated_tags.append(tag_name)
+                        tag_scores[tag_name] = 1.0
+                continue
+            
             # Try exact match first (case-insensitive, normalized)
             normalized_extracted = self._normalize_tag_name(extracted_tag).lower()
             exact_match = None
@@ -1534,12 +1621,13 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
                     break
             
             if exact_match:
-                validated_tags.append(exact_match)
-                tag_scores[exact_match] = 1.0
+                if exact_match not in validated_tags:
+                    validated_tags.append(exact_match)
+                    tag_scores[exact_match] = 1.0
                 continue
             
-            # Try fuzzy matching
-            fuzzy_match, score = self._fuzzy_match_tag(extracted_tag, available_tag_names, threshold=0.80)
+            # Try fuzzy matching with lower threshold for better recall
+            fuzzy_match, score = self._fuzzy_match_tag(extracted_tag, available_tag_names, threshold=0.75)
             if fuzzy_match:
                 if fuzzy_match not in validated_tags:
                     validated_tags.append(fuzzy_match)
@@ -1556,7 +1644,7 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         return validated_tags
     
     def _parse_ai_response(self, response_text):
-        """Parse AI response to extract structured information with improved tag extraction"""
+        """Parse AI response to extract structured information with comprehensive tag extraction"""
         result = {
             'tags': [],
             'confidence': 'Medium',
@@ -1569,24 +1657,33 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         lines = response_text.split('\n')
         current_section = None
         reasoning_lines = []
+        reference_lines = []
         
-        # First, try to extract tags using improved extraction method
+        # STEP 1: Extract tags from main response (explicit tag mentions)
         extracted_tags = self._extract_tags_from_response(response_text)
         
-        # Validate and match extracted tags against mind map
+        # STEP 2: Extract tag IDs from entire response (T0009, T0010, etc.)
+        tag_ids = self._extract_tag_ids_from_text(response_text)
+        for tag_id in tag_ids:
+            tag_name = self._get_tag_by_id(tag_id)
+            if tag_name and tag_name not in extracted_tags:
+                extracted_tags.append(tag_name)
+                print(f"[Parser] Found tag ID {tag_id}, mapped to: {tag_name}")
+        
+        # STEP 3: Validate and match extracted tags
         if extracted_tags:
             validated_tags = self._validate_and_match_tags(extracted_tags)
             if validated_tags:
                 result['tags'] = validated_tags
-                print(f"[Parser] Extracted and validated {len(validated_tags)} tag(s): {validated_tags}")
+                print(f"[Parser] Extracted and validated {len(validated_tags)} tag(s) from main response: {validated_tags}")
         
-        # Continue with original parsing for other fields
+        # STEP 4: Parse other fields (reasoning, confidence, reference)
         for line in lines:
             line = line.strip()
             if not line:
                 continue
             
-            # Collect reasoning lines for tag extraction fallback
+            # Collect reasoning lines
             if 'reasoning' in line.lower() or 'المنطق' in line or 'الاستدلال' in line:
                 current_section = 'reasoning'
                 separator = ':' if ':' in line else ':'
@@ -1628,41 +1725,81 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
                 current_section = 'reference'
                 separator = ':' if ':' in line else ':'
                 if separator in line:
-                    result['mind_map_reference'] = line.split(separator, 1)[1].strip()
+                    reference_lines.append(line.split(separator, 1)[1].strip())
                 continue
             
             # Continue adding to current section
             if current_section == 'reference':
-                result['mind_map_reference'] += ' ' + line
+                reference_lines.append(line)
         
-        # Join reasoning lines
+        # Join reasoning and reference lines
         result['reasoning'] = ' '.join(reasoning_lines).strip()
-        result['mind_map_reference'] = result['mind_map_reference'].strip()
+        result['mind_map_reference'] = ' '.join(reference_lines).strip()
         
-        # FALLBACK: If no tags were found, try to extract them from the reasoning section
+        # STEP 5: Extract tag IDs from reference section (often contains T0009, Q_C2_1_8, etc.)
+        if result['mind_map_reference']:
+            ref_tag_ids = self._extract_tag_ids_from_text(result['mind_map_reference'])
+            for tag_id in ref_tag_ids:
+                tag_name = self._get_tag_by_id(tag_id)
+                if tag_name and tag_name not in result['tags']:
+                    result['tags'].append(tag_name)
+                    print(f"[Parser] Found tag ID {tag_id} in reference, mapped to: {tag_name}")
+        
+        # STEP 6: FALLBACK - Extract from reasoning if still no tags found
         if not result['tags'] and result['reasoning']:
-            tags_from_reasoning = self._extract_tags_from_reasoning(result['reasoning'])
-            if tags_from_reasoning:
-                # Validate reasoning-extracted tags too
-                validated_reasoning_tags = self._validate_and_match_tags(tags_from_reasoning)
-                if validated_reasoning_tags:
-                    result['tags'] = validated_reasoning_tags
-                    print(f"[Parser] Extracted {len(validated_reasoning_tags)} tag(s) from reasoning: {validated_reasoning_tags}")
+            # Extract tag IDs from reasoning
+            reasoning_tag_ids = self._extract_tag_ids_from_text(result['reasoning'])
+            for tag_id in reasoning_tag_ids:
+                tag_name = self._get_tag_by_id(tag_id)
+                if tag_name and tag_name not in result['tags']:
+                    result['tags'].append(tag_name)
+                    print(f"[Parser] Found tag ID {tag_id} in reasoning, mapped to: {tag_name}")
+            
+            # Also try name-based extraction from reasoning
+            if not result['tags']:
+                tags_from_reasoning = self._extract_tags_from_reasoning(result['reasoning'])
+                if tags_from_reasoning:
+                    validated_reasoning_tags = self._validate_and_match_tags(tags_from_reasoning)
+                    if validated_reasoning_tags:
+                        result['tags'] = validated_reasoning_tags
+                        print(f"[Parser] Extracted {len(validated_reasoning_tags)} tag(s) from reasoning text: {validated_reasoning_tags}")
+        
+        # Final validation: ensure all tags are valid
+        if result['tags']:
+            final_validated = []
+            for tag in result['tags']:
+                all_tags = self.mind_map_parser.get_all_tags()
+                if all_tags:
+                    tag_names = [t['tag_name'] for t in all_tags.values() if 'tag_name' in t]
+                    if tag in tag_names:
+                        final_validated.append(tag)
+            result['tags'] = final_validated
         
         return result
     
     def _extract_tags_from_reasoning(self, reasoning_text):
         """Extract tag names from reasoning text using intelligent pattern matching"""
+        # PRIORITY 1: Extract tag IDs first (most reliable)
+        tag_ids = self._extract_tag_ids_from_text(reasoning_text)
+        found_tags = []
+        found_normalized = set()
+        
+        for tag_id in tag_ids:
+            tag_name = self._get_tag_by_id(tag_id)
+            if tag_name:
+                normalized = self._normalize_tag_name(tag_name).lower()
+                if normalized not in found_normalized:
+                    found_tags.append(tag_name)
+                    found_normalized.add(normalized)
+                    print(f"[Parser] Extracted tag from reasoning via ID {tag_id}: {tag_name}")
+        
         # Get all available tags from mind map for matching
         all_tags = self.mind_map_parser.get_all_tags()
         if not all_tags:
-            return []
+            return found_tags
         
         # Create a list of tag names (normalized for matching)
         tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
-        
-        found_tags = []
-        found_normalized = set()  # Track normalized versions to avoid duplicates
         
         # Method 1: Look for quoted tag names (e.g., "Packages Benefits & Pricing")
         quoted_pattern = r'"([^"]{10,})"'  # At least 10 chars to avoid false positives
@@ -1672,8 +1809,11 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
             if len(match) < 10:  # Skip very short matches
                 continue
             
-            # Try exact match first (normalized)
             normalized_match = self._normalize_tag_name(match).lower()
+            if normalized_match in found_normalized:
+                continue
+            
+            # Try exact match first (normalized)
             exact_found = False
             for tag in tag_names:
                 if self._normalize_tag_name(tag).lower() == normalized_match:
@@ -1732,10 +1872,9 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         if len(found_tags) < 2:  # Try to find more if we have less than 2
             reasoning_lower = reasoning_text.lower()
             for tag in tag_names:
-                if self._normalize_tag_name(tag).lower() in found_normalized:
-                    continue
-                
                 normalized_tag = self._normalize_tag_name(tag).lower()
+                if normalized_tag in found_normalized:
+                    continue
                 
                 # Check if significant portion of tag appears in reasoning
                 # Split tag into words and check if most words appear
