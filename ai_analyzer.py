@@ -107,425 +107,95 @@ class AIAnalyzer:
         self.request_times.append(current_time)
     
     def analyze_scenario(self, scenario_text, file_paths=None, language='en'):
-        """Analyze customer scenario and suggest tags"""
+        """Analyze customer scenario and return the best matching tag name"""
         if not scenario_text.strip():
             error_msg = 'Please provide a customer scenario' if language == 'en' else 'الرجاء إدخال سيناريو العميل'
             return {'error': error_msg}
         
-        # Prepare detailed mind map context with complete tag logic
-        # Now includes ALL rows with full logic details for better tag understanding
+        # IMPORTANT: Use scenario text VERBATIM - no modification, no neutralization
+        original_scenario = scenario_text.strip()
+        
+        # Prepare mind map context with Tag_Logic and Customer_Scenarios
         mind_map_context = self.mind_map_parser.get_mind_map_summary()
         
-        # If context is too large, prioritize keeping complete tag logic
-        # Increase limit to allow more tag logic details (important for accuracy)
-        if len(mind_map_context) > 8000:  # Increased limit to ~8000 characters for better tag logic
-            # Try to keep complete tag entries rather than truncating mid-tag
-            truncated = mind_map_context[:8000]
-            # Find last complete tag entry
+        # If context is too large, truncate intelligently
+        if len(mind_map_context) > 10000:
+            truncated = mind_map_context[:10000]
             last_tag_end = max(
-                truncated.rfind('\nRow '),
-                truncated.rfind('TAG:'),
-                truncated.rfind('Sheet:')
+                truncated.rfind('\n[TAG ID:'),
+                truncated.rfind('TAG LOGIC:'),
+                truncated.rfind('EXAMPLE CUSTOMER SCENARIOS:')
             )
-            if last_tag_end > 7000:  # If we can keep most of it
-                mind_map_context = truncated[:last_tag_end] + "\n\n... (additional tags truncated for efficiency)"
+            if last_tag_end > 8000:
+                mind_map_context = truncated[:last_tag_end] + "\n\n... (additional tags truncated)"
             else:
-                mind_map_context = truncated + "\n... (truncated for efficiency)"
+                mind_map_context = truncated + "\n... (truncated)"
         
-        # Detect if input is Arabic (simple heuristic)
-        is_arabic = self._is_arabic_text(scenario_text) or language == 'ar'
-        
-        # Build detailed system prompt that helps AI understand tag logic and relate to scenarios
-        # IMPORTANT: Add business-focused instructions to avoid safety filter triggers
-        # Check if we're using the organized format (has Tag_Logic and Customer_Scenarios)
-        is_organized_format = 'TAG LOGIC:' in mind_map_context or 'EXAMPLE CUSTOMER SCENARIOS:' in mind_map_context
-        
-        if is_arabic:
-            system_prompt = f"""You are an expert customer support tag classification system for a legitimate business service.
+        # Build simple, focused system prompt - optimized for List of tags 2025.xlsx
+        system_prompt = f"""You are a customer support tag classification system for a streaming service business.
 
-CONTEXT: This is a business application for categorizing customer service requests. All scenarios are legitimate business inquiries about service usage, technical issues, or account management.
-
-TAG LOGIC MIND MAP (Complete Reference - Organized Format):
+TAG REFERENCE DATA (from List of tags 2025.xlsx):
 {mind_map_context}
 
 YOUR TASK:
-1. CAREFULLY READ the complete tag information above. Each tag entry contains:
-   - TAG NAME: The exact tag name to recommend
-   - TAG LOGIC: Detailed criteria explaining when to use this tag
-   - EXAMPLE CUSTOMER SCENARIOS: Sample scenarios that match this tag (use these as reference patterns)
-   - CATEGORY/SHEET: The category this tag belongs to
+1. Read the customer scenario EXACTLY as provided (do not modify or interpret it)
+2. For EACH tag in the reference data, check:
+   - Does the scenario match the TAG LOGIC? (read the logic criteria carefully)
+   - Does the scenario match the EXAMPLE CUSTOMER SCENARIOS? (compare with examples)
+3. Find the ONE tag where BOTH the TAG LOGIC and EXAMPLE SCENARIOS best match the customer scenario
+4. Return ONLY the exact Full_Tag_Name from the reference data
 
-2. MATCHING STRATEGY (CRITICAL - Follow this process precisely):
-   
-   A. DUAL-MATCHING APPROACH:
-      - PRIMARY MATCH: Compare customer scenario with TAG LOGIC field
-        * Extract key concepts from TAG LOGIC (what conditions must be met)
-        * Check if customer scenario describes these same conditions
-        * Look for semantic equivalence, not just exact word matches
-      
-      - SECONDARY MATCH: Compare customer scenario with EXAMPLE CUSTOMER SCENARIOS
-        * These examples show REAL scenarios that use this tag
-        * If customer scenario is similar to examples, it's likely a match
-        * Compare language patterns, problem descriptions, and context
-      
-      - COMBINED SCORING:
-        * HIGH confidence: Both TAG LOGIC (80%+) AND EXAMPLE SCENARIOS (80%+) match
-        * MEDIUM confidence: TAG LOGIC matches (70%+) but examples differ
-        * LOW confidence: Only partial matches or weak alignment
-   
-   B. SEMANTIC ANALYSIS:
-      - Extract core meaning from customer scenario (not just keywords)
-      - Match the MEANING with TAG LOGIC requirements
-      - Match the MEANING with EXAMPLE SCENARIOS patterns
-      - Consider synonyms, related terms, and contextual variations
-      - Understand that same problem can be described differently
-   
-   C. KEYWORD AND CONCEPT EXTRACTION:
-      - Identify technical terms, service names, features mentioned
-      - Match these with terms in TAG LOGIC and EXAMPLE SCENARIOS
-      - Look for both exact matches and conceptual matches
-      - Consider abbreviations, variations, and related terminology
-   
-   D. CONTEXTUAL UNDERSTANDING:
-      - Understand the business context (subscription, device, payment, etc.)
-      - Match context with CATEGORY/SHEET information
-      - Ensure scenario fits the tag's intended use case
-      - Multiple tags can apply if scenario matches multiple tag logics
+MATCHING RULES:
+- Compare the MEANING of the scenario with TAG LOGIC requirements
+- Compare the scenario with EXAMPLE CUSTOMER SCENARIOS for similarity
+- Prioritize tags where BOTH logic and examples align
+- Use semantic understanding, not just keyword matching
+- Return the tag with the highest confidence match
 
-3. ANALYZE the customer scenario (DETAILED PROCESS):
-   
-   For EACH tag in the mind map, perform this analysis:
-   
-   a. TAG LOGIC EVALUATION:
-      - Read the TAG LOGIC field completely
-      - Identify the specific conditions/criteria it describes
-      - Ask: "Does the customer scenario meet these conditions?"
-      - Check for:
-        * Same type of issue/problem
-        * Same features/services involved
-        * Same user situation/context
-        * Same technical requirements
-   
-   b. EXAMPLE SCENARIOS COMPARISON:
-      - Read ALL EXAMPLE CUSTOMER SCENARIOS for this tag
-      - Compare customer scenario with each example:
-        * Similar problem description?
-        * Similar language/terminology?
-        * Similar context/situation?
-        * Similar user behavior or issue?
-      - If customer scenario is similar to examples, it's a strong match
-   
-   c. CROSS-REFERENCE VALIDATION:
-      - If TAG LOGIC matches but examples differ → verify if scenario still fits
-      - If examples match but TAG LOGIC seems different → re-read TAG LOGIC carefully
-      - Best matches: Both TAG LOGIC and examples align
-   
-   d. PRIORITIZATION:
-      - Tags where BOTH TAG LOGIC and EXAMPLE SCENARIOS match → HIGHEST priority
-      - Tags where TAG LOGIC matches strongly → HIGH priority
-      - Tags where only examples match → MEDIUM priority
-      - Consider CATEGORY/SHEET to understand tag's domain context
+OUTPUT FORMAT (EXACTLY AS SHOWN):
+Tag: [exact Full_Tag_Name from reference data]
 
-4. RECOMMEND tags that have the strongest logical relationship:
-   
-   SELECTION CRITERIA:
-   - Use the EXACT TAG NAME from the mind map (from Full_Tag_Name field)
-   - Do NOT modify, abbreviate, or paraphrase tag names
-   - Can recommend multiple tags if scenario matches multiple tag logics
-   
-   CONFIDENCE LEVELS:
-   - HIGH confidence: 
-     * Scenario matches TAG LOGIC criteria (80%+ alignment)
-     * Scenario is similar to EXAMPLE CUSTOMER SCENARIOS (80%+ similarity)
-     * Key concepts, terminology, and context all align
-     * Clear, unambiguous match
-   
-   - MEDIUM confidence:
-     * Scenario matches TAG LOGIC criteria (70%+ alignment)
-     * But differs from EXAMPLE SCENARIOS OR examples are not provided
-     * Core concepts match but some details differ
-     * Still a valid match but less certain
-   
-   - LOW confidence:
-     * Only partial match with TAG LOGIC (50-70% alignment)
-     * Scenario is related but not exactly matching
-     * Some concepts align but key elements differ
-     * Use when no better matches exist
-   
-   REASONING REQUIREMENTS:
-   - MUST cite specific parts of TAG LOGIC that match
-   - MUST reference EXAMPLE CUSTOMER SCENARIOS if they're similar
-   - MUST explain WHY the scenario fits the tag
-   - MUST identify key matching elements (keywords, concepts, context)
-
-IMPORTANT: 
-- This is a business context. Focus on technical and business aspects only.
-- Use neutral, professional language. All terms refer to legitimate business operations.
-- You must understand the COMPLETE TAG LOGIC before recommending.
-- Match based on LOGIC, CONTEXT, and EXAMPLE SCENARIOS, not just exact keyword matching.
-- Output in English only.
-
-OUTPUT FORMAT:
-- Recommended Tag(s): [exact TAG NAME(s) from mind map, can be multiple]
-- Confidence: [High/Medium/Low - based on how well scenario matches TAG LOGIC and EXAMPLE SCENARIOS]
-- Reasoning: [detailed explanation showing HOW the scenario relates to the TAG LOGIC, cite specific matching elements and compare with EXAMPLE SCENARIOS if applicable]
-- Mind Map Reference: [TAG ID and CATEGORY/SHEET of matched tags]"""
-        else:
-            system_prompt = f"""You are an expert customer support tag classification system for a legitimate business service.
-
-CONTEXT: This is a business application for categorizing customer service requests. All scenarios are legitimate business inquiries about service usage, technical issues, or account management.
-
-TAG LOGIC MIND MAP (Complete Reference - Organized Format):
-{mind_map_context}
-
-YOUR TASK:
-1. CAREFULLY READ the complete tag information above. Each tag entry contains:
-   - TAG NAME: The exact tag name to recommend
-   - TAG LOGIC: Detailed criteria explaining when to use this tag
-   - EXAMPLE CUSTOMER SCENARIOS: Sample scenarios that match this tag (use these as reference patterns)
-   - CATEGORY/SHEET: The category this tag belongs to
-
-2. MATCHING STRATEGY (CRITICAL - Follow this process precisely):
-   
-   A. DUAL-MATCHING APPROACH:
-      - PRIMARY MATCH: Compare customer scenario with TAG LOGIC field
-        * Extract key concepts from TAG LOGIC (what conditions must be met)
-        * Check if customer scenario describes these same conditions
-        * Look for semantic equivalence, not just exact word matches
-      
-      - SECONDARY MATCH: Compare customer scenario with EXAMPLE CUSTOMER SCENARIOS
-        * These examples show REAL scenarios that use this tag
-        * If customer scenario is similar to examples, it's likely a match
-        * Compare language patterns, problem descriptions, and context
-      
-      - COMBINED SCORING:
-        * HIGH confidence: Both TAG LOGIC (80%+) AND EXAMPLE SCENARIOS (80%+) match
-        * MEDIUM confidence: TAG LOGIC matches (70%+) but examples differ
-        * LOW confidence: Only partial matches or weak alignment
-   
-   B. SEMANTIC ANALYSIS:
-      - Extract core meaning from customer scenario (not just keywords)
-      - Match the MEANING with TAG LOGIC requirements
-      - Match the MEANING with EXAMPLE SCENARIOS patterns
-      - Consider synonyms, related terms, and contextual variations
-      - Understand that same problem can be described differently
-   
-   C. KEYWORD AND CONCEPT EXTRACTION:
-      - Identify technical terms, service names, features mentioned
-      - Match these with terms in TAG LOGIC and EXAMPLE SCENARIOS
-      - Look for both exact matches and conceptual matches
-      - Consider abbreviations, variations, and related terminology
-   
-   D. CONTEXTUAL UNDERSTANDING:
-      - Understand the business context (subscription, device, payment, etc.)
-      - Match context with CATEGORY/SHEET information
-      - Ensure scenario fits the tag's intended use case
-      - Multiple tags can apply if scenario matches multiple tag logics
-
-3. ANALYZE the customer scenario (DETAILED PROCESS):
-   
-   For EACH tag in the mind map, perform this analysis:
-   
-   a. TAG LOGIC EVALUATION:
-      - Read the TAG LOGIC field completely
-      - Identify the specific conditions/criteria it describes
-      - Ask: "Does the customer scenario meet these conditions?"
-      - Check for:
-        * Same type of issue/problem
-        * Same features/services involved
-        * Same user situation/context
-        * Same technical requirements
-   
-   b. EXAMPLE SCENARIOS COMPARISON:
-      - Read ALL EXAMPLE CUSTOMER SCENARIOS for this tag
-      - Compare customer scenario with each example:
-        * Similar problem description?
-        * Similar language/terminology?
-        * Similar context/situation?
-        * Similar user behavior or issue?
-      - If customer scenario is similar to examples, it's a strong match
-   
-   c. CROSS-REFERENCE VALIDATION:
-      - If TAG LOGIC matches but examples differ → verify if scenario still fits
-      - If examples match but TAG LOGIC seems different → re-read TAG LOGIC carefully
-      - Best matches: Both TAG LOGIC and examples align
-   
-   d. PRIORITIZATION:
-      - Tags where BOTH TAG LOGIC and EXAMPLE SCENARIOS match → HIGHEST priority
-      - Tags where TAG LOGIC matches strongly → HIGH priority
-      - Tags where only examples match → MEDIUM priority
-      - Consider CATEGORY/SHEET to understand tag's domain context
-
-4. RECOMMEND tags that have the strongest logical relationship:
-   
-   SELECTION CRITERIA:
-   - Use the EXACT TAG NAME from the mind map (from Full_Tag_Name field)
-   - Do NOT modify, abbreviate, or paraphrase tag names
-   - Can recommend multiple tags if scenario matches multiple tag logics
-   
-   CONFIDENCE LEVELS:
-   - HIGH confidence: 
-     * Scenario matches TAG LOGIC criteria (80%+ alignment)
-     * Scenario is similar to EXAMPLE CUSTOMER SCENARIOS (80%+ similarity)
-     * Key concepts, terminology, and context all align
-     * Clear, unambiguous match
-   
-   - MEDIUM confidence:
-     * Scenario matches TAG LOGIC criteria (70%+ alignment)
-     * But differs from EXAMPLE SCENARIOS OR examples are not provided
-     * Core concepts match but some details differ
-     * Still a valid match but less certain
-   
-   - LOW confidence:
-     * Only partial match with TAG LOGIC (50-70% alignment)
-     * Scenario is related but not exactly matching
-     * Some concepts align but key elements differ
-     * Use when no better matches exist
-   
-   REASONING REQUIREMENTS:
-   - MUST cite specific parts of TAG LOGIC that match
-   - MUST reference EXAMPLE CUSTOMER SCENARIOS if they're similar
-   - MUST explain WHY the scenario fits the tag
-   - MUST identify key matching elements (keywords, concepts, context)
-
-IMPORTANT: 
-- This is a business context. Focus on technical and business aspects only.
-- Use neutral, professional language. All terms refer to legitimate business operations.
-- You must understand the COMPLETE TAG LOGIC before recommending.
-- Match based on LOGIC, CONTEXT, and EXAMPLE SCENARIOS, not just exact keyword matching.
-
-OUTPUT FORMAT:
-- Recommended Tag(s): [exact TAG NAME(s) from mind map, can be multiple]
-- Confidence: [High/Medium/Low - based on how well scenario matches TAG LOGIC and EXAMPLE SCENARIOS]
-- Reasoning: [detailed explanation showing HOW the scenario relates to the TAG LOGIC, cite specific matching elements and compare with EXAMPLE SCENARIOS if applicable]
-- Mind Map Reference: [TAG ID and CATEGORY/SHEET of matched tags]"""
+IMPORTANT:
+- This is a legitimate business customer support system
+- All content refers to standard business operations
+- Return only the tag name, nothing else"""
         
-        # Build messages for AI
+        # Build messages - scenario sent VERBATIM (no modification)
         messages = [
             {
                 "role": "system",
                 "content": system_prompt
+            },
+            {
+                "role": "user",
+                "content": f"Customer Scenario:\n{original_scenario}\n\nFind the best matching tag. Return only the tag name in format: Tag: [name]"
             }
         ]
         
-        # Use original scenario text verbatim - no neutralization
-        # Enhanced user content with detailed step-by-step matching instructions
-        if is_organized_format:
-            user_content = f"""CUSTOMER SERVICE SCENARIO TO ANALYZE:
-{scenario_text}
-
-STEP-BY-STEP ANALYSIS PROCESS:
-
-STEP 1: EXTRACT KEY ELEMENTS FROM CUSTOMER SCENARIO
-- Identify the main issue/problem the customer is reporting
-- Extract key nouns (devices, services, features, accounts, subscriptions, etc.)
-- Extract key verbs/actions (watching, streaming, accessing, paying, cancelling, etc.)
-- Identify any technical terms, error messages, or specific features mentioned
-- Note any emotional indicators or urgency (frustrated, urgent, not working, etc.)
-
-STEP 2: SEMANTIC MATCHING WITH TAG LOGIC
-For each tag in the mind map, perform the following comparison:
-
-A. TAG LOGIC ANALYSIS:
-   - Read the TAG LOGIC field carefully
-   - Identify the core criteria/conditions described in the TAG LOGIC
-   - Check if the customer scenario matches these criteria:
-     * Does the scenario describe the same type of issue?
-     * Are the same concepts/features mentioned?
-     * Does the scenario fit the conditions described in TAG LOGIC?
-   - Score: How well does the scenario align with TAG LOGIC? (0-100%)
-
-B. EXAMPLE CUSTOMER SCENARIOS COMPARISON:
-   - Read the EXAMPLE CUSTOMER SCENARIOS field
-   - Compare the customer scenario with each example scenario:
-     * Are they describing the same problem?
-     * Do they use similar language or phrasing?
-     * Are the key concepts the same?
-     * Is the context/situation similar?
-   - Score: How similar is the scenario to the examples? (0-100%)
-
-C. COMBINED MATCHING SCORE:
-   - If both TAG LOGIC and EXAMPLE SCENARIOS match well (70%+ each) → HIGH confidence
-   - If TAG LOGIC matches well (70%+) but examples differ → MEDIUM confidence
-   - If only partial matches → LOW confidence
-
-STEP 3: KEYWORD AND CONCEPT MAPPING
-For each potential matching tag, identify:
-- Direct keyword matches between scenario and TAG LOGIC
-- Direct keyword matches between scenario and EXAMPLE SCENARIOS
-- Semantic matches (same meaning, different words)
-- Related concepts (e.g., "subscription" relates to "payment", "VIP" relates to "premium")
-
-STEP 4: CONTEXTUAL ALIGNMENT
-- Consider the CATEGORY/SHEET to understand the tag's domain
-- Ensure the scenario fits within that domain context
-- Check if the scenario's urgency/severity matches the tag's typical use cases
-
-STEP 5: FINAL RECOMMENDATION
-- Select tags with the highest combined matching scores
-- Prioritize tags where BOTH TAG LOGIC and EXAMPLE SCENARIOS align
-- If multiple tags match, recommend all relevant ones
-- Use the EXACT TAG NAME from the mind map
-
-STEP 6: DETAILED REASONING
-In your reasoning, explicitly state:
-- Which specific parts of TAG LOGIC match the scenario (quote or paraphrase)
-- Which EXAMPLE CUSTOMER SCENARIOS are similar and why
-- What keywords/concepts were matched
-- Why this tag is appropriate for this scenario
-
-Output in English. Focus on technical and business aspects only."""
-        else:
-            user_content = f"""CUSTOMER SERVICE SCENARIO TO ANALYZE:
-{scenario_text}
-
-ANALYSIS INSTRUCTIONS:
-1. Read the scenario carefully and identify key concepts, issues, and keywords
-2. Compare these elements with the tag logic in the mind map
-3. Find tags where the scenario content matches the tag's logic/criteria (check ALL columns)
-4. Consider:
-   - Direct keyword matches
-   - Synonym matches
-   - Conceptual matches (same meaning, different words)
-   - Related terms and context
-5. Recommend the tag(s) that have the strongest logical match
-6. Explain in your reasoning HOW the scenario relates to the tag logic (cite specific matching elements)
-
-Output in English. Focus on technical and business aspects only."""
-        
-        # Handle file attachments (images/videos)
-        if file_paths:
-            user_content += "\n\nATTACHED FILES:"
-            for file_path in file_paths:
-                if os.path.exists(file_path):
-                    file_ext = os.path.splitext(file_path)[1].lower()
-                    
-                    # Check if it's an image (Gemini handles images directly, no need for base64 encoding here)
-                    if file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-                        # Images will be handled in _call_gemini method
-                        pass
-                    elif file_ext in ['.mp4', '.mov', '.avi', '.webm']:
-                        # For videos, we'll note them but Gemini API doesn't support video directly
-                        # We could extract frames or use a different approach
-                        user_content += f"\n- Video file: {os.path.basename(file_path)} (Note: Video content will be described by the user)"
-        
-        messages.append({
-            "role": "user",
-            "content": user_content
-        })
-        
         try:
-            # Call Gemini API - pass original scenario text verbatim
+            # Call Gemini API with verbatim scenario
             if self.provider == 'gemini':
-                ai_response = self._call_gemini(messages, file_paths, scenario_text)
+                ai_response = self._call_gemini(messages, file_paths, original_scenario)
             else:
                 raise ValueError(f"Unsupported provider: {self.provider}. Only 'gemini' is supported.")
             
-            # Parse response to extract structured information
-            result = self._parse_ai_response(ai_response)
-            result['full_response'] = ai_response
+            # Parse response to extract ONLY the tag name
+            tag_name = self._extract_tag_name_from_response(ai_response)
             
-            return result
+            if tag_name:
+                return {
+                    'tags': [tag_name],
+                    'confidence': 'High',  # If we got a tag, it's confident
+                    'reasoning': '',  # No reasoning needed per requirements
+                    'mind_map_reference': '',
+                    'full_response': ai_response
+                }
+            else:
+                return {
+                    'error': 'No tag found',
+                    'details': 'Could not extract a valid tag name from AI response',
+                    'full_response': ai_response
+                }
             
         except Exception as e:
             error_str = str(e)
@@ -1642,6 +1312,60 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
             validated_tags.sort(key=lambda t: tag_scores.get(t, 0.0), reverse=True)
         
         return validated_tags
+    
+    def _extract_tag_name_from_response(self, response_text):
+        """Extract tag name from AI response - simple and focused"""
+        if not response_text:
+            return None
+        
+        # Get all available tags for validation
+        all_tags = self.mind_map_parser.get_all_tags()
+        if not all_tags:
+            return None
+        
+        available_tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
+        
+        # Pattern 1: "Tag: [tag name]" or "Tag:[tag name]"
+        pattern1 = r'(?:^|\n)\s*Tag\s*:\s*([^\n]+?)(?:\n|$)'
+        matches1 = re.findall(pattern1, response_text, re.IGNORECASE | re.MULTILINE)
+        for match in matches1:
+            tag_name = match.strip()
+            # Validate against available tags
+            if tag_name in available_tag_names:
+                return tag_name
+            # Try fuzzy match
+            fuzzy_match, score = self._fuzzy_match_tag(tag_name, available_tag_names, threshold=0.90)
+            if fuzzy_match:
+                return fuzzy_match
+        
+        # Pattern 2: Extract tag IDs and map to names
+        tag_ids = self._extract_tag_ids_from_text(response_text)
+        for tag_id in tag_ids:
+            tag_name = self._get_tag_by_id(tag_id)
+            if tag_name:
+                return tag_name
+        
+        # Pattern 3: Look for quoted tag names
+        pattern3 = r'"([^"]{15,})"'  # At least 15 chars
+        matches3 = re.findall(pattern3, response_text)
+        for match in matches3:
+            tag_name = match.strip()
+            if tag_name in available_tag_names:
+                return tag_name
+            fuzzy_match, score = self._fuzzy_match_tag(tag_name, available_tag_names, threshold=0.90)
+            if fuzzy_match:
+                return fuzzy_match
+        
+        # Pattern 4: Direct match against available tags (exact match in response)
+        response_lower = response_text.lower()
+        for tag_name in available_tag_names:
+            normalized_tag = self._normalize_tag_name(tag_name).lower()
+            if normalized_tag in response_lower:
+                # Verify it's a meaningful match (not just a word)
+                if len(normalized_tag.split()) >= 2:  # Multi-word tags
+                    return tag_name
+        
+        return None
     
     def _parse_ai_response(self, response_text):
         """Parse AI response to extract structured information with comprehensive tag extraction"""
