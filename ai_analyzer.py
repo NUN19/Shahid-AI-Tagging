@@ -7,7 +7,9 @@ Uses Google Gemini API (free tier available)
 import os
 import json
 import time
+import re
 from collections import deque
+from difflib import SequenceMatcher
 
 class AIAnalyzer:
     def __init__(self, mind_map_parser):
@@ -1417,8 +1419,144 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         arabic_ratio = len(text_chars & arabic_chars) / len(text_chars)
         return arabic_ratio > 0.3
     
+    def _normalize_tag_name(self, tag_name):
+        """Normalize tag name for better matching (handle variations)"""
+        if not tag_name:
+            return ""
+        # Remove extra whitespace, normalize case
+        normalized = ' '.join(tag_name.split())
+        # Remove common prefixes/suffixes that might vary
+        normalized = re.sub(r'^(tag|tags?):\s*', '', normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r'\s*\(.*?\)\s*$', '', normalized)  # Remove trailing parentheses
+        return normalized.strip()
+    
+    def _fuzzy_match_tag(self, extracted_tag, available_tags, threshold=0.85):
+        """Find best matching tag using fuzzy string matching"""
+        if not extracted_tag or not available_tags:
+            return None, 0.0
+        
+        normalized_extracted = self._normalize_tag_name(extracted_tag).lower()
+        best_match = None
+        best_score = 0.0
+        
+        for tag_name in available_tags:
+            normalized_tag = self._normalize_tag_name(tag_name).lower()
+            
+            # Calculate similarity score
+            similarity = SequenceMatcher(None, normalized_extracted, normalized_tag).ratio()
+            
+            # Bonus for exact match after normalization
+            if normalized_extracted == normalized_tag:
+                similarity = 1.0
+            
+            # Bonus if extracted tag is contained in actual tag (or vice versa)
+            if normalized_extracted in normalized_tag or normalized_tag in normalized_extracted:
+                similarity = max(similarity, 0.9)
+            
+            if similarity > best_score:
+                best_score = similarity
+                best_match = tag_name
+        
+        # Only return if similarity is above threshold
+        if best_score >= threshold:
+            return best_match, best_score
+        return None, best_score
+    
+    def _extract_tags_from_response(self, response_text):
+        """Intelligently extract tags from AI response using multiple patterns"""
+        extracted_tags = []
+        
+        # Pattern 1: "Recommended Tag(s): [tag1, tag2, ...]"
+        pattern1 = r'(?:recommended\s+tag(?:s)?|tag(?:s)?\s+recommended)[:\-]?\s*(?:\[|\()?([^\]]+?)(?:\]|\))?'
+        matches1 = re.findall(pattern1, response_text, re.IGNORECASE | re.MULTILINE)
+        for match in matches1:
+            tags = [t.strip() for t in re.split(r'[,;]|and', match)]
+            extracted_tags.extend([t for t in tags if t])
+        
+        # Pattern 2: "Tag: [tag name]" or "Tags: tag1, tag2"
+        pattern2 = r'(?:^|\n)\s*(?:tag|tags)[:\-]\s*([^\n]+)'
+        matches2 = re.findall(pattern2, response_text, re.IGNORECASE | re.MULTILINE)
+        for match in matches2:
+            # Remove brackets if present
+            match = re.sub(r'[\[\]()]', '', match)
+            tags = [t.strip() for t in re.split(r'[,;]|and', match)]
+            extracted_tags.extend([t for t in tags if t and len(t) > 3])  # Filter very short strings
+        
+        # Pattern 3: Bullet points or numbered lists with tags
+        pattern3 = r'(?:^|\n)\s*(?:[-*•]|\d+[\.\)])\s*(?:tag|tags?)?[:\-]?\s*([^\n]+)'
+        matches3 = re.findall(pattern3, response_text, re.IGNORECASE | re.MULTILINE)
+        for match in matches3:
+            match = re.sub(r'[\[\]()]', '', match)
+            # Only take if it looks like a tag (has some length and not just common words)
+            if len(match.strip()) > 5 and not match.strip().lower().startswith(('the', 'this', 'these')):
+                extracted_tags.append(match.strip())
+        
+        # Pattern 4: Quoted tag names
+        pattern4 = r'"([^"]{10,})"'  # At least 10 chars to avoid false positives
+        matches4 = re.findall(pattern4, response_text)
+        for match in matches4:
+            # Check if it looks like a tag name (not a sentence)
+            if len(match.split()) <= 15 and not match.strip().endswith(('.', '!', '?')):
+                extracted_tags.append(match.strip())
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_tags = []
+        for tag in extracted_tags:
+            normalized = self._normalize_tag_name(tag).lower()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                unique_tags.append(tag)
+        
+        return unique_tags
+    
+    def _validate_and_match_tags(self, extracted_tags):
+        """Validate extracted tags against mind map and return matched tags with scores"""
+        all_tags = self.mind_map_parser.get_all_tags()
+        if not all_tags:
+            return []
+        
+        available_tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
+        
+        validated_tags = []
+        tag_scores = {}
+        
+        for extracted_tag in extracted_tags:
+            if not extracted_tag or len(extracted_tag.strip()) < 3:
+                continue
+            
+            # Try exact match first (case-insensitive, normalized)
+            normalized_extracted = self._normalize_tag_name(extracted_tag).lower()
+            exact_match = None
+            for tag_name in available_tag_names:
+                if self._normalize_tag_name(tag_name).lower() == normalized_extracted:
+                    exact_match = tag_name
+                    break
+            
+            if exact_match:
+                validated_tags.append(exact_match)
+                tag_scores[exact_match] = 1.0
+                continue
+            
+            # Try fuzzy matching
+            fuzzy_match, score = self._fuzzy_match_tag(extracted_tag, available_tag_names, threshold=0.80)
+            if fuzzy_match:
+                if fuzzy_match not in validated_tags:
+                    validated_tags.append(fuzzy_match)
+                    tag_scores[fuzzy_match] = score
+            else:
+                # Log potential matches that were below threshold for debugging
+                if score > 0.6:  # Log if somewhat close
+                    print(f"[Parser] Tag '{extracted_tag}' had similarity {score:.2f} but below threshold")
+        
+        # Sort by score (highest first) if we have scores
+        if tag_scores:
+            validated_tags.sort(key=lambda t: tag_scores.get(t, 0.0), reverse=True)
+        
+        return validated_tags
+    
     def _parse_ai_response(self, response_text):
-        """Parse AI response to extract structured information"""
+        """Parse AI response to extract structured information with improved tag extraction"""
         result = {
             'tags': [],
             'confidence': 'Medium',
@@ -1432,22 +1570,21 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         current_section = None
         reasoning_lines = []
         
+        # First, try to extract tags using improved extraction method
+        extracted_tags = self._extract_tags_from_response(response_text)
+        
+        # Validate and match extracted tags against mind map
+        if extracted_tags:
+            validated_tags = self._validate_and_match_tags(extracted_tags)
+            if validated_tags:
+                result['tags'] = validated_tags
+                print(f"[Parser] Extracted and validated {len(validated_tags)} tag(s): {validated_tags}")
+        
+        # Continue with original parsing for other fields
         for line in lines:
             line = line.strip()
             if not line:
                 continue
-            
-            # Extract tags (support both English and Arabic)
-            if ('recommended tag' in line.lower() or 'tag(s)' in line.lower() or 
-                'العلامة' in line or 'العلامات' in line or 'موصى بها' in line):
-                # Extract tag names
-                if ':' in line or ':' in line:
-                    separator = ':' if ':' in line else ':'
-                    tag_part = line.split(separator, 1)[1].strip()
-                    # Remove brackets and split
-                    tag_part = tag_part.replace('[', '').replace(']', '').replace(']', '').replace('[', '')
-                    tags = [t.strip() for t in tag_part.split(',')]
-                    result['tags'] = [t for t in tags if t]
             
             # Collect reasoning lines for tag extraction fallback
             if 'reasoning' in line.lower() or 'المنطق' in line or 'الاستدلال' in line:
@@ -1476,15 +1613,14 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
                     else:
                         result['confidence'] = 'Medium'
                 else:
-                    result['confidence'] = conf
-            
-            # Extract reasoning (support both English and Arabic)
-            if 'reasoning' in line.lower() or 'المنطق' in line or 'الاستدلال' in line:
-                current_section = 'reasoning'
-                separator = ':' if ':' in line else ':'
-                if separator in line:
-                    reasoning_lines.append(line.split(separator, 1)[1].strip())
-                continue
+                    # Normalize confidence values
+                    conf_lower = conf.lower().strip()
+                    if 'high' in conf_lower:
+                        result['confidence'] = 'High'
+                    elif 'low' in conf_lower:
+                        result['confidence'] = 'Low'
+                    else:
+                        result['confidence'] = 'Medium'
             
             # Extract mind map reference (support both languages)
             if ('mind map reference' in line.lower() or 'reference' in line.lower() or 
@@ -1496,29 +1632,27 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
                 continue
             
             # Continue adding to current section
-            if current_section == 'reasoning':
-                reasoning_lines.append(line)
-            elif current_section == 'reference':
+            if current_section == 'reference':
                 result['mind_map_reference'] += ' ' + line
         
         # Join reasoning lines
         result['reasoning'] = ' '.join(reasoning_lines).strip()
         result['mind_map_reference'] = result['mind_map_reference'].strip()
         
-        # FALLBACK: If no tags were found in explicit "Recommended Tag(s):" line,
-        # try to extract them from the reasoning section
+        # FALLBACK: If no tags were found, try to extract them from the reasoning section
         if not result['tags'] and result['reasoning']:
             tags_from_reasoning = self._extract_tags_from_reasoning(result['reasoning'])
             if tags_from_reasoning:
-                result['tags'] = tags_from_reasoning
-                print(f"[Parser] Extracted {len(tags_from_reasoning)} tag(s) from reasoning: {tags_from_reasoning}")
+                # Validate reasoning-extracted tags too
+                validated_reasoning_tags = self._validate_and_match_tags(tags_from_reasoning)
+                if validated_reasoning_tags:
+                    result['tags'] = validated_reasoning_tags
+                    print(f"[Parser] Extracted {len(validated_reasoning_tags)} tag(s) from reasoning: {validated_reasoning_tags}")
         
         return result
     
     def _extract_tags_from_reasoning(self, reasoning_text):
-        """Extract tag names from reasoning text when not explicitly listed"""
-        import re
-        
+        """Extract tag names from reasoning text using intelligent pattern matching"""
         # Get all available tags from mind map for matching
         all_tags = self.mind_map_parser.get_all_tags()
         if not all_tags:
@@ -1528,55 +1662,98 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
         
         found_tags = []
+        found_normalized = set()  # Track normalized versions to avoid duplicates
         
         # Method 1: Look for quoted tag names (e.g., "Packages Benefits & Pricing")
-        quoted_pattern = r'"([^"]+)"'
+        quoted_pattern = r'"([^"]{10,})"'  # At least 10 chars to avoid false positives
         quoted_matches = re.findall(quoted_pattern, reasoning_text)
         for match in quoted_matches:
-            # Try exact match first
+            match = match.strip()
+            if len(match) < 10:  # Skip very short matches
+                continue
+            
+            # Try exact match first (normalized)
+            normalized_match = self._normalize_tag_name(match).lower()
+            exact_found = False
             for tag in tag_names:
-                if tag.lower() == match.lower():
+                if self._normalize_tag_name(tag).lower() == normalized_match:
                     if tag not in found_tags:
                         found_tags.append(tag)
+                        found_normalized.add(normalized_match)
+                        exact_found = True
                         break
-            # Try partial match if exact match failed
-            if not any(tag.lower() == match.lower() for tag in found_tags):
-                for tag in tag_names:
-                    if match.lower() in tag.lower() or tag.lower() in match.lower():
-                        if tag not in found_tags:
-                            found_tags.append(tag)
-                            break
+            
+            # Try fuzzy match if exact match failed
+            if not exact_found:
+                fuzzy_match, score = self._fuzzy_match_tag(match, tag_names, threshold=0.75)
+                if fuzzy_match and self._normalize_tag_name(fuzzy_match).lower() not in found_normalized:
+                    found_tags.append(fuzzy_match)
+                    found_normalized.add(self._normalize_tag_name(fuzzy_match).lower())
         
         # Method 2: Look for tag names mentioned with "tag" keyword (e.g., "the tag 'X'")
-        tag_keyword_pattern = r"(?:tag|tags)\s+['""]([^'""]+)['""]"
-        tag_keyword_matches = re.findall(tag_keyword_pattern, reasoning_text, re.IGNORECASE)
-        for match in tag_keyword_matches:
-            for tag in tag_names:
-                if tag.lower() == match.lower():
-                    if tag not in found_tags:
-                        found_tags.append(tag)
-                        break
+        tag_keyword_patterns = [
+            r"(?:tag|tags)\s+['""]([^'""]{10,})['""]",  # tag "X"
+            r"['""]([^'""]{10,})['""]\s+(?:tag|tags)",  # "X" tag
+            r"(?:tag|tags)\s+(?:named|called|is)\s+['""]([^'""]{10,})['""]",  # tag named "X"
+        ]
+        for pattern in tag_keyword_patterns:
+            matches = re.findall(pattern, reasoning_text, re.IGNORECASE)
+            for match in matches:
+                match = match.strip()
+                normalized_match = self._normalize_tag_name(match).lower()
+                if normalized_match in found_normalized:
+                    continue
+                
+                fuzzy_match, score = self._fuzzy_match_tag(match, tag_names, threshold=0.75)
+                if fuzzy_match:
+                    found_tags.append(fuzzy_match)
+                    found_normalized.add(self._normalize_tag_name(fuzzy_match).lower())
         
         # Method 3: Look for tag names mentioned with "matching" or "aligns" (e.g., "matching the tag X")
-        matching_pattern = r"(?:matching|matches|match|aligns?|corresponds?)\s+(?:the\s+)?tag\s+['""]([^'""]+)['""]"
-        matching_matches = re.findall(matching_pattern, reasoning_text, re.IGNORECASE)
-        for match in matching_matches:
-            for tag in tag_names:
-                if tag.lower() == match.lower():
-                    if tag not in found_tags:
-                        found_tags.append(tag)
-                        break
+        matching_patterns = [
+            r"(?:matching|matches|match|aligns?|corresponds?)\s+(?:the\s+)?tag\s+['""]([^'""]{10,})['""]",
+            r"(?:matching|matches|match|aligns?|corresponds?)\s+['""]([^'""]{10,})['""]",
+        ]
+        for pattern in matching_patterns:
+            matches = re.findall(pattern, reasoning_text, re.IGNORECASE)
+            for match in matches:
+                match = match.strip()
+                normalized_match = self._normalize_tag_name(match).lower()
+                if normalized_match in found_normalized:
+                    continue
+                
+                fuzzy_match, score = self._fuzzy_match_tag(match, tag_names, threshold=0.75)
+                if fuzzy_match:
+                    found_tags.append(fuzzy_match)
+                    found_normalized.add(self._normalize_tag_name(fuzzy_match).lower())
         
-        # Method 4: Direct tag name mentions (case-insensitive partial matching)
-        # Only if we haven't found tags yet
-        if not found_tags:
+        # Method 4: Direct tag name mentions (intelligent matching)
+        # Only if we haven't found enough tags yet
+        if len(found_tags) < 2:  # Try to find more if we have less than 2
             reasoning_lower = reasoning_text.lower()
             for tag in tag_names:
-                # Check if tag name appears in reasoning (with word boundaries for better matching)
-                tag_pattern = r'\b' + re.escape(tag.lower()) + r'\b'
-                if re.search(tag_pattern, reasoning_lower):
-                    if tag not in found_tags:
+                if self._normalize_tag_name(tag).lower() in found_normalized:
+                    continue
+                
+                normalized_tag = self._normalize_tag_name(tag).lower()
+                
+                # Check if significant portion of tag appears in reasoning
+                # Split tag into words and check if most words appear
+                tag_words = normalized_tag.split()
+                if len(tag_words) >= 2:  # Only for multi-word tags
+                    words_found = sum(1 for word in tag_words if len(word) > 3 and word in reasoning_lower)
+                    if words_found >= len(tag_words) * 0.7:  # 70% of words found
+                        # Verify with fuzzy match
+                        fuzzy_match, score = self._fuzzy_match_tag(tag, [tag], threshold=0.0)  # Just to get score
+                        if score > 0.6:  # Reasonable match
+                            found_tags.append(tag)
+                            found_normalized.add(normalized_tag)
+                else:
+                    # Single word or short tag - use word boundary matching
+                    tag_pattern = r'\b' + re.escape(normalized_tag) + r'\b'
+                    if re.search(tag_pattern, reasoning_lower):
                         found_tags.append(tag)
+                        found_normalized.add(normalized_tag)
         
         return found_tags
 
