@@ -1,12 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upload Mind Map</title>
     <!-- SheetJS library for client-side Excel processing -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #00C9FF 0%, #92FE9D 100%);
+            /* Teal/Green gradient from logo */
+            --bg-dark: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-color: #00C9FF;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -14,93 +27,56 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #0a0e27;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-dark);
+            background-image:
+                radial-gradient(at 0% 0%, rgba(0, 201, 255, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(146, 254, 157, 0.15) 0px, transparent 50%);
             min-height: 100vh;
             padding: 20px;
+            color: var(--text-primary);
         }
 
         .container {
             max-width: 800px;
             margin: 0 auto;
-            background: #1a1f3a;
-            border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             overflow: hidden;
-            border: 1px solid #2a2f4a;
+            border: 1px solid var(--glass-border);
         }
 
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px 30px;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 60px 30px;
             text-align: center;
             position: relative;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            border-bottom: 1px solid var(--glass-border);
         }
 
         .logo-container {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 15px;
-            margin-bottom: 15px;
+            gap: 20px;
+            margin-bottom: 20px;
         }
 
-        .logo {
-            width: 60px;
-            height: 60px;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            border: 2px solid rgba(255, 255, 255, 0.3);
-        }
-
-        .logo-dots {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-
-        .logo-dot {
-            width: 8px;
-            height: 8px;
-            background: white;
-            border-radius: 50%;
-        }
-
-        .logo-bar {
-            width: 24px;
-            height: 4px;
-            background: white;
-            border-radius: 2px;
-        }
-
-        .header h1 {
-            font-size: 2.5em;
-            margin: 0;
-            font-weight: 700;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            letter-spacing: -0.5px;
-        }
-
-        .header p {
-            opacity: 0.95;
+        .logo-img {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            filter: drop-shadow(0 0 20px rgba(0, 201, 255, 0.3));
             font-size: 1.2em;
-            margin-top: 12px;
-            font-weight: 300;
-            letter-spacing: 0.3px;
+            margin-top: 15px;
+            font-weight: 400;
         }
 
         .main-content {
-            padding: 30px;
-            background: #1a1f3a;
+            padding: 40px;
         }
 
         .upload-section {
@@ -108,39 +84,42 @@
         }
 
         .upload-area {
-            border: 3px dashed #667eea;
-            border-radius: 10px;
-            padding: 40px;
+            border: 2px dashed var(--glass-border);
+            border-radius: 16px;
+            padding: 50px;
             text-align: center;
-            background: #0f1429;
-            transition: all 0.3s;
+            background: rgba(15, 23, 42, 0.4);
+            transition: all 0.3s ease;
             cursor: pointer;
         }
 
         .upload-area:hover {
-            background: #14192e;
-            border-color: #764ba2;
+            background: rgba(15, 23, 42, 0.6);
+            border-color: var(--accent-color);
+            transform: translateY(-2px);
         }
 
         .upload-area.dragover {
-            background: #1a2340;
-            border-color: #8bb4ff;
+            background: rgba(0, 201, 255, 0.1);
+            border-color: var(--accent-color);
         }
 
         .upload-icon {
             font-size: 4em;
             margin-bottom: 20px;
+            filter: drop-shadow(0 0 10px rgba(0, 201, 255, 0.3));
         }
 
         .upload-text {
-            font-size: 1.2em;
-            color: #e0e0e0;
+            font-size: 1.3em;
+            color: var(--text-primary);
             margin-bottom: 10px;
+            font-weight: 600;
         }
 
         .upload-hint {
-            color: #b0b0b0;
-            font-size: 0.9em;
+            color: var(--text-secondary);
+            font-size: 0.95em;
         }
 
         .file-input {
@@ -148,21 +127,35 @@
         }
 
         .file-info {
-            margin-top: 20px;
-            padding: 15px;
-            background: #0f1429;
-            border-radius: 8px;
+            margin-top: 25px;
+            padding: 20px;
+            background: rgba(0, 201, 255, 0.1);
+            border-radius: 12px;
             display: none;
-            border: 1px solid #2a2f4a;
+            border: 1px solid rgba(0, 201, 255, 0.2);
         }
 
         .file-info.active {
             display: block;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .file-info h3 {
-            color: #8bb4ff;
+            color: var(--accent-color);
             margin-bottom: 10px;
+            font-size: 1.1em;
         }
 
         .file-info ul {
@@ -172,43 +165,50 @@
 
         .file-info li {
             padding: 5px 0;
-            color: #d0d0d0;
+            color: var(--text-primary);
+            font-size: 0.95em;
         }
 
         .process-btn {
             width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            padding: 20px;
+            background: var(--primary-gradient);
+            color: #0f172a;
             border: none;
-            border-radius: 8px;
+            border-radius: 16px;
             font-size: 1.2em;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            margin-top: 20px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-top: 30px;
             display: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 10px 20px -10px rgba(0, 201, 255, 0.5);
         }
 
         .process-btn.active {
             display: block;
+            animation: slideUp 0.3s ease-out;
         }
 
         .process-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 20px 30px -10px rgba(0, 201, 255, 0.6);
+            filter: brightness(1.1);
         }
 
         .process-btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
+            filter: grayscale(1);
         }
 
         .loading {
             display: none;
             text-align: center;
-            padding: 20px;
+            padding: 40px;
         }
 
         .loading.active {
@@ -216,82 +216,89 @@
         }
 
         .spinner {
-            border: 4px solid #2a2f4a;
-            border-top: 4px solid #667eea;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid var(--accent-color);
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 50px;
+            height: 50px;
             animation: spin 1s linear infinite;
-            margin: 0 auto;
+            margin: 0 auto 20px;
         }
-        
+
         .loading {
-            color: #e0e0e0;
+            color: var(--text-secondary);
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         .error-message {
-            background: #2a1f1f;
-            color: #ff6b6b;
-            padding: 15px;
-            border-radius: 8px;
+            background: rgba(255, 68, 68, 0.1);
+            color: #ff4444;
+            padding: 20px;
+            border-radius: 12px;
             margin-top: 20px;
-            border-left: 5px solid #ff4444;
-            border: 1px solid #3a2f2f;
+            border: 1px solid rgba(255, 68, 68, 0.3);
             display: none;
         }
 
         .error-message.active {
             display: block;
+            animation: slideUp 0.3s ease-out;
         }
 
         .success-message {
-            background: #1f2a1f;
-            color: #6bff6b;
-            padding: 15px;
-            border-radius: 8px;
+            background: rgba(76, 175, 80, 0.1);
+            color: #4caf50;
+            padding: 20px;
+            border-radius: 12px;
             margin-top: 20px;
-            border-left: 5px solid #4caf50;
-            border: 1px solid #2f3a2f;
+            border: 1px solid rgba(76, 175, 80, 0.3);
             display: none;
         }
 
         .success-message.active {
             display: block;
+            animation: slideUp 0.3s ease-out;
         }
 
         .language-selector {
             position: absolute;
-            top: 20px;
-            right: 20px;
+            top: 25px;
+            right: 25px;
             display: flex;
             gap: 10px;
             z-index: 100;
         }
 
         .lang-btn {
-            padding: 8px 15px;
-            border: 2px solid rgba(255,255,255,0.5);
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border-radius: 6px;
+            padding: 8px 16px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            border-radius: 8px;
             cursor: pointer;
-            font-weight: 600;
+            font-weight: 500;
             transition: all 0.3s;
+            font-family: inherit;
         }
 
         .lang-btn:hover {
-            background: rgba(255,255,255,0.3);
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
         }
 
         .lang-btn.active {
-            background: white;
-            color: #667eea;
-            border-color: white;
+            background: rgba(0, 201, 255, 0.15);
+            color: var(--accent-color);
+            border-color: var(--accent-color);
         }
 
         [dir="rtl"] {
@@ -300,6 +307,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -308,14 +316,7 @@
                 <button class="lang-btn" id="langAr" onclick="switchLanguage('ar')">العربية</button>
             </div>
             <div class="logo-container">
-                <div class="logo">
-                    <div class="logo-dots">
-                        <div class="logo-dot"></div>
-                        <div class="logo-dot"></div>
-                        <div class="logo-dot"></div>
-                    </div>
-                    <div class="logo-bar"></div>
-                </div>
+                <img src="/static/logo.png" alt="Shahid AI Logo" class="logo-img">
                 <h1 id="headerTitle">Upload Mind Map</h1>
             </div>
             <p id="headerSubtitle">Upload your Excel mind map file to get started</p>
@@ -329,7 +330,7 @@
                     <div class="upload-hint" id="uploadHint">Supports .xlsx and .xls files</div>
                 </div>
                 <input type="file" id="fileInput" class="file-input" accept=".xlsx,.xls" />
-                
+
                 <div class="file-info" id="fileInfo">
                     <h3 id="fileInfoTitle">File Information:</h3>
                     <ul id="fileInfoList"></ul>
@@ -348,10 +349,11 @@
                 <div class="success-message" id="successMessage"></div>
             </div>
 
-            <div style="margin-top: 30px; padding: 20px; background: #0f1429; border-radius: 8px; border: 1px solid #2a2f4a;">
+            <div
+                style="margin-top: 30px; padding: 20px; background: #0f1429; border-radius: 8px; border: 1px solid #2a2f4a;">
                 <h3 style="color: #8bb4ff; margin-bottom: 10px;" id="securityTitle">🔒 Security & Privacy</h3>
                 <p style="color: #d0d0d0; line-height: 1.6;" id="securityText">
-                    Your Excel file is processed entirely in your browser. The file never leaves your device. 
+                    Your Excel file is processed entirely in your browser. The file never leaves your device.
                     Only the tag structure (not sensitive data) is sent to the server for AI analysis.
                 </p>
             </div>
@@ -401,7 +403,7 @@
         function switchLanguage(lang) {
             currentLang = lang;
             const t = translations[lang];
-            
+
             // Keep header in English as requested
             // document.getElementById('headerTitle').textContent = t.title;
             // document.getElementById('headerSubtitle').textContent = t.subtitle;
@@ -412,7 +414,7 @@
             document.getElementById('loadingText').textContent = t.loading;
             document.getElementById('securityTitle').textContent = t.securityTitle;
             document.getElementById('securityText').textContent = t.securityText;
-            
+
             document.getElementById('langEn').classList.toggle('active', lang === 'en');
             document.getElementById('langAr').classList.toggle('active', lang === 'ar');
             document.body.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
@@ -470,7 +472,7 @@
         function displayFileInfo(file) {
             const fileInfo = document.getElementById('fileInfo');
             const fileInfoList = document.getElementById('fileInfoList');
-            
+
             fileInfoList.innerHTML = `
                 <li><strong>Name:</strong> ${file.name}</li>
                 <li><strong>Size:</strong> ${(file.size / 1024).toFixed(2)} KB</li>
@@ -494,7 +496,7 @@
 
             // Read and process Excel file in browser (client-side)
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = function (e) {
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
@@ -519,7 +521,7 @@
                 }
             };
 
-            reader.onerror = function() {
+            reader.onerror = function () {
                 document.getElementById('loading').classList.remove('active');
                 document.getElementById('processBtn').disabled = false;
                 showError(t.errorProcessing + 'Failed to read file');
@@ -530,7 +532,7 @@
 
         async function uploadMindMap(mindMapData, filename) {
             const t = translations[currentLang];
-            
+
             try {
                 const response = await fetch('/api/upload-mindmap', {
                     method: 'POST',
@@ -546,7 +548,7 @@
                 // Check if response is JSON
                 const contentType = response.headers.get('content-type');
                 let result;
-                
+
                 if (contentType && contentType.includes('application/json')) {
                     result = await response.json();
                 } else {
@@ -575,7 +577,7 @@
                 // Success!
                 document.getElementById('loading').classList.remove('active');
                 showSuccess(t.successProcessing);
-                
+
                 // Wait a bit longer to ensure session is saved server-side
                 // Then redirect to main app
                 setTimeout(() => {
@@ -611,5 +613,5 @@
         }
     </script>
 </body>
-</html>
 
+</html>
