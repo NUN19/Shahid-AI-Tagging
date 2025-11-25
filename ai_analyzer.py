@@ -44,26 +44,40 @@ class AIAnalyzer:
                     self.HarmCategory = HarmCategory
                     self.HarmBlockThreshold = HarmBlockThreshold
                     # Pre-create safety settings in __init__ to ensure consistency
+                    # COMPLETELY DISABLE ALL SAFETY FILTERS - Set all categories to BLOCK_NONE
                     self.safety_settings = {
                         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
                     }
-                    print("[INIT] Safety filters disabled using direct import")
+                    # Also try to disable any additional categories if they exist
+                    try:
+                        if hasattr(HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
+                            self.safety_settings[HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = HarmBlockThreshold.BLOCK_NONE
+                    except:
+                        pass
+                    print("[INIT] ALL safety filters COMPLETELY DISABLED (BLOCK_NONE) using direct import")
                 except (ImportError, AttributeError) as e1:
                     print(f"[INIT] Direct import failed: {e1}, trying genai.types...")
                     # Method 2: Use genai.types
                     try:
                         self.HarmCategory = genai.types.HarmCategory
                         self.HarmBlockThreshold = genai.types.HarmBlockThreshold
+                        # COMPLETELY DISABLE ALL SAFETY FILTERS
                         self.safety_settings = {
                             genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
                             genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
                             genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
                             genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
                         }
-                        print("[INIT] Safety filters disabled using genai.types")
+                        # Also try to disable any additional categories if they exist
+                        try:
+                            if hasattr(genai.types.HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
+                                self.safety_settings[genai.types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = genai.types.HarmBlockThreshold.BLOCK_NONE
+                        except:
+                            pass
+                        print("[INIT] ALL safety filters COMPLETELY DISABLED (BLOCK_NONE) using genai.types")
                     except (AttributeError, TypeError) as e2:
                         print(f"[INIT] genai.types failed: {e2}, will try in _call_gemini")
                         # Will be handled in _call_gemini with additional fallbacks
@@ -549,13 +563,20 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                 print("[API] CRITICAL: safety_settings is None - attempting emergency initialization...")
                 try:
                     from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                    # COMPLETELY DISABLE ALL SAFETY FILTERS
                     safety_settings = {
                         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
                     }
-                    print("[API] Emergency initialization successful!")
+                    # Also disable any additional categories if they exist
+                    try:
+                        if hasattr(HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
+                            safety_settings[HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = HarmBlockThreshold.BLOCK_NONE
+                    except:
+                        pass
+                    print("[API] Emergency initialization successful! ALL safety filters COMPLETELY DISABLED")
                     # Cache it for future use
                     self.safety_settings = safety_settings
                 except Exception as emergency_error:
@@ -620,7 +641,8 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
             
             # Make request - ONLY pass safety_settings in generate_content (not at model level)
             # This ensures they're applied correctly without conflicts
-            print("[API] Making request with safety_settings in generate_content() (BLOCK_NONE)")
+            # ALL SAFETY FILTERS ARE COMPLETELY DISABLED (BLOCK_NONE)
+            print("[API] Making request with ALL safety filters COMPLETELY DISABLED (BLOCK_NONE)")
             
             # Execute API call with timeout protection
             api_thread = threading.Thread(target=api_call_with_timeout)
@@ -1010,7 +1032,7 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
             return None
     
     def _get_safety_settings(self):
-        """Get safety settings with all filters disabled - returns None if cannot be created"""
+        """Get safety settings with ALL filters COMPLETELY DISABLED - returns None if cannot be created"""
         # Use pre-initialized settings if available
         safety_settings = self.safety_settings
         
@@ -1018,29 +1040,41 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                 # Fallback: Try to create safety settings now with multiple methods
                 if self.HarmCategory and self.HarmBlockThreshold:
                     try:
-                        # Method 1: Use enum values directly
+                        # Method 1: Use enum values directly - COMPLETELY DISABLE ALL FILTERS
                         safety_settings = {
                             self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_NONE,
                             self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_NONE,
                             self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_NONE,
                             self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_NONE,
                         }
-                        print("[API] Safety filters disabled using enum values (fallback)")
+                        # Also disable any additional categories if they exist
+                        try:
+                            if hasattr(self.HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
+                                safety_settings[self.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = self.HarmBlockThreshold.BLOCK_NONE
+                        except:
+                            pass
+                        print("[API] ALL safety filters COMPLETELY DISABLED using enum values (fallback)")
                     except (AttributeError, TypeError) as e:
                         print(f"[API] Enum method failed: {e}, trying integer values...")
                         try:
-                            # Method 2: Use integer values (BLOCK_NONE = 0)
+                            # Method 2: Use integer values (BLOCK_NONE = 0) - COMPLETELY DISABLE ALL
                             safety_settings = {
                                 self.HarmCategory.HARM_CATEGORY_HARASSMENT: 0,
                                 self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: 0,
                                 self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: 0,
                                 self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: 0,
                             }
-                            print("[API] Safety filters disabled using integer values")
+                            # Also disable any additional categories if they exist
+                            try:
+                                if hasattr(self.HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
+                                    safety_settings[self.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = 0
+                            except:
+                                pass
+                            print("[API] ALL safety filters COMPLETELY DISABLED using integer values (0 = BLOCK_NONE)")
                         except Exception as e2:
                             print(f"[API] Integer method failed: {e2}, trying direct import...")
                             try:
-                                # Method 3: Direct import in method
+                                # Method 3: Direct import in method - COMPLETELY DISABLE ALL
                                 from google.generativeai.types import HarmCategory, HarmBlockThreshold
                                 safety_settings = {
                                     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
@@ -1048,18 +1082,30 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                                     HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                                     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
                                 }
-                                print("[API] Safety filters disabled using direct import")
+                                # Also disable any additional categories if they exist
+                                try:
+                                    if hasattr(HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
+                                        safety_settings[HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = HarmBlockThreshold.BLOCK_NONE
+                                except:
+                                    pass
+                                print("[API] ALL safety filters COMPLETELY DISABLED using direct import")
                             except Exception as e3:
                                 print(f"[API] Direct import failed: {e3}, trying genai.types...")
                                 try:
-                                    # Method 4: Use genai.types
+                                    # Method 4: Use genai.types - COMPLETELY DISABLE ALL
                                     safety_settings = {
                                         self.genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
                                         self.genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
                                         self.genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
                                         self.genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
                                     }
-                                    print("[API] Safety filters disabled using genai.types")
+                                    # Also disable any additional categories if they exist
+                                    try:
+                                        if hasattr(self.genai.types.HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
+                                            safety_settings[self.genai.types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = self.genai.types.HarmBlockThreshold.BLOCK_NONE
+                                    except:
+                                        pass
+                                    print("[API] ALL safety filters COMPLETELY DISABLED using genai.types")
                                 except Exception as e4:
                                     print(f"[API] All methods failed: {e4}")
                                     # CRITICAL: If all methods fail, we MUST still try to disable filters
