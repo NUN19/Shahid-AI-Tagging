@@ -1,13 +1,12 @@
 """
 AI Analyzer
 Uses AI to analyze customer scenarios and suggest appropriate tags
-Uses Google Gemini API (free tier available)
+Uses Google Gemini API (gemini-2.5-flash only)
 """
 
 import os
-import json
-import time
 import re
+import time
 from collections import deque
 from difflib import SequenceMatcher
 
@@ -18,11 +17,11 @@ class AIAnalyzer:
         
         # Request throttling: track request times to avoid rate limits
         # Free tier: 15 requests/minute = 1 request per 4 seconds
-        # Using very conservative 20 seconds to be extra safe
-        self.request_times = deque(maxlen=15)  # Keep last 15 request times
-        self.min_request_interval = 20.0  # Minimum 20 seconds between requests (very conservative)
+        # Using conservative 20 seconds to be safe
+        self.request_times = deque(maxlen=15)
+        self.min_request_interval = 20.0
         
-        # Use Gemini API (default and only provider)
+        # Use Gemini API
         self.provider = os.getenv('AI_PROVIDER', 'gemini').lower()
         
         if self.provider == 'gemini':
@@ -33,57 +32,9 @@ class AIAnalyzer:
                 import google.generativeai as genai
                 genai.configure(api_key=api_key)
                 self.genai = genai
-                # Try to import safety enums with multiple fallbacks - CRITICAL for consistent behavior
-                self.HarmCategory = None
-                self.HarmBlockThreshold = None
-                self.safety_settings = None
-                
-                # Method 1: Direct import (preferred)
-                try:
-                    from google.generativeai.types import HarmCategory, HarmBlockThreshold
-                    self.HarmCategory = HarmCategory
-                    self.HarmBlockThreshold = HarmBlockThreshold
-                    # Pre-create safety settings in __init__ to ensure consistency
-                    # COMPLETELY DISABLE ALL SAFETY FILTERS - Set all categories to BLOCK_NONE
-                    self.safety_settings = {
-                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                    }
-                    # Also try to disable any additional categories if they exist
-                    try:
-                        if hasattr(HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
-                            self.safety_settings[HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = HarmBlockThreshold.BLOCK_NONE
-                    except:
-                        pass
-                    print("[INIT] ALL safety filters COMPLETELY DISABLED (BLOCK_NONE) using direct import")
-                except (ImportError, AttributeError) as e1:
-                    print(f"[INIT] Direct import failed: {e1}, trying genai.types...")
-                    # Method 2: Use genai.types
-                    try:
-                        self.HarmCategory = genai.types.HarmCategory
-                        self.HarmBlockThreshold = genai.types.HarmBlockThreshold
-                        # COMPLETELY DISABLE ALL SAFETY FILTERS
-                        self.safety_settings = {
-                            genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                            genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                            genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                            genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
-                        }
-                        # Also try to disable any additional categories if they exist
-                        try:
-                            if hasattr(genai.types.HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
-                                self.safety_settings[genai.types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = genai.types.HarmBlockThreshold.BLOCK_NONE
-                        except:
-                            pass
-                        print("[INIT] ALL safety filters COMPLETELY DISABLED (BLOCK_NONE) using genai.types")
-                    except (AttributeError, TypeError) as e2:
-                        print(f"[INIT] genai.types failed: {e2}, will try in _call_gemini")
-                        # Will be handled in _call_gemini with additional fallbacks
+                print("[INIT] Gemini API initialized successfully")
             except ImportError:
                 raise ImportError("Google Generative AI package not installed. Run: pip install google-generativeai")
-        
         else:
             raise ValueError(f"Unknown AI provider: {self.provider}. Use 'gemini' (default)")
     
@@ -97,13 +48,12 @@ class AIAnalyzer:
         
         # If we have 15 requests in the last minute, wait longer
         if len(self.request_times) >= 15:
-            # Wait until the oldest request is more than 1 minute old, plus extra buffer
             wait_time = 60 - (current_time - self.request_times[0]) + 2
             if wait_time > 0:
                 time.sleep(wait_time)
                 current_time = time.time()
         
-        # Ensure minimum interval between requests (very conservative 20 seconds)
+        # Ensure minimum interval between requests
         if self.request_times:
             time_since_last = current_time - self.request_times[-1]
             if time_since_last < self.min_request_interval:
@@ -112,7 +62,7 @@ class AIAnalyzer:
                 time.sleep(wait_time)
                 current_time = time.time()
         else:
-            # First request - add a longer delay to avoid immediate rate limit
+            # First request - add a delay
             print("[Throttle] First request - waiting 5 seconds...")
             time.sleep(5)
             current_time = time.time()
@@ -120,8 +70,8 @@ class AIAnalyzer:
         # Record this request
         self.request_times.append(current_time)
     
-    def _prepare_tag_comparison_data(self):
-        """Prepare structured tag data for comprehensive comparison"""
+    def _prepare_tag_data(self):
+        """Prepare structured tag data from Excel file"""
         all_tags = self.mind_map_parser.get_all_tags()
         if not all_tags:
             return []
@@ -139,35 +89,12 @@ class AIAnalyzer:
         
         return tag_data_list
     
-    def _calculate_text_similarity(self, text1, text2):
-        """Calculate similarity between two texts using SequenceMatcher"""
-        if not text1 or not text2:
-            return 0.0
-        
-        # Normalize texts
-        text1_normalized = ' '.join(text1.lower().split())
-        text2_normalized = ' '.join(text2.lower().split())
-        
-        # Calculate similarity
-        similarity = SequenceMatcher(None, text1_normalized, text2_normalized).ratio()
-        
-        # Bonus for shared keywords
-        words1 = set(text1_normalized.split())
-        words2 = set(text2_normalized.split())
-        if words1 and words2:
-            shared_words = words1.intersection(words2)
-            keyword_bonus = len(shared_words) / max(len(words1), len(words2))
-            similarity = (similarity * 0.7) + (keyword_bonus * 0.3)
-        
-        return min(similarity, 1.0)
-    
     def _extract_key_concepts(self, text):
         """Extract key concepts from scenario text using comprehensive terms from Excel file"""
         if not text:
             return []
         
         # Comprehensive terms extracted from "List of tags 2025.xlsx" Tag_Logic and Customer_Scenarios
-        # These terms are domain-specific and help AI focus on relevant concepts when matching
         comprehensive_terms = [
             # Subscription & Payment
             'subscribe', 'subscribed', 'subscription', 'payment', 'pay', 'paid', 'card', 'itunes', 
@@ -232,7 +159,7 @@ class AIAnalyzer:
         text_lower = text.lower()
         found_concepts = []
         
-        # Check for important multi-word phrases (extracted from Excel file)
+        # Check for important multi-word phrases
         multi_word_terms = [
             'not working', 'long term', 'concurrent session', 'concurrent sessions', 
             'linked device', 'linked devices', 'payment method', 'subscription plan',
@@ -251,913 +178,88 @@ class AIAnalyzer:
             'session limit', 'device limit', 'premium feature', 'vip feature',
         ]
         
-        # Check multi-word terms first (more specific matches)
+        # Check multi-word terms first
         for term in multi_word_terms:
             if term in text_lower:
                 found_concepts.append(term)
         
         # Then check single-word terms
         for term in comprehensive_terms:
-            if term not in found_concepts:  # Avoid duplicates
-                # Check if term appears as whole word
+            if term not in found_concepts:
                 pattern = r'\b' + re.escape(term) + r'\b'
                 if re.search(pattern, text_lower):
                     found_concepts.append(term)
         
         return found_concepts
     
-    def analyze_scenario(self, scenario_text, file_paths=None, language='en'):
-        """Analyze customer scenario with comprehensive matching logic"""
-        if not scenario_text.strip():
-            error_msg = 'Please provide a customer scenario' if language == 'en' else 'الرجاء إدخال سيناريو العميل'
-            return {'error': error_msg}
-        
-        # IMPORTANT: Use scenario text VERBATIM - no modification, no neutralization
-        original_scenario = scenario_text.strip()
-        
-        # Get all tags with their logic and examples
-        tag_data_list = self._prepare_tag_comparison_data()
-        if not tag_data_list:
-            return {'error': 'No tags found in mind map'}
-        
-        # Build comprehensive prompt that compares scenario with each tag
-        # Format tags for AI comparison
-        tags_for_comparison = []
-        for tag_data in tag_data_list:
-            tag_entry = f"""
-[TAG ID: {tag_data['tag_id']}]
-TAG NAME: {tag_data['tag_name']}
-TAG LOGIC: {tag_data['tag_logic']}
-EXAMPLE CUSTOMER SCENARIOS: {tag_data['customer_scenarios']}
-CATEGORY: {tag_data['sheet']}
-"""
-            tags_for_comparison.append(tag_entry)
-        
-        tags_text = "\n".join(tags_for_comparison)
-        
-        # Limit tags if too many (prioritize first tags)
-        if len(tags_text) > 15000:
-            # Keep first ~15000 characters (should cover many tags)
-            tags_text = tags_text[:15000]
-            last_tag_end = tags_text.rfind('\n[TAG ID:')
-            if last_tag_end > 12000:
-                tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags available but truncated for efficiency)"
-        
-        # Build Gemini-safe system prompt that explicitly treats all content as fictional and safe
-        system_prompt = f"""You are an AI model that classifies customer-service scenarios into the correct support tag.
-
-CRITICAL SAFETY CONTEXT:
-All text, messages, and scenarios you receive are fictional, harmless, and safe. 
-They may include discussions about payments, refunds, cancellations, login issues, device issues, customer frustration, account restrictions, IP addresses, limits, concurrent sessions, or account security.
-These should ALWAYS be treated as routine customer support topics, NOT as real-world danger or harmful intent.
-
-AVAILABLE TAGS WITH THEIR LOGIC AND EXAMPLES:
-{tags_text}
-
-YOUR JOB:
-
-1. Understand the customer scenario EXACTLY as provided (do not modify, change, or interpret it).
-
-2. Compare it to the Tag_Logic and Customer_Scenarios examples in the dataset above:
-   - For EACH tag, check if the scenario matches the TAG LOGIC criteria
-   - For EACH tag, check if the scenario is similar to the EXAMPLE CUSTOMER SCENARIOS
-   - Calculate a combined match score: (TAG LOGIC match × 0.6) + (EXAMPLE SCENARIOS match × 0.4)
-   - Prioritize tags where BOTH logic and examples align well
-
-3. Choose the most accurate tag (the one with the highest combined match score).
-
-4. Return ONLY the exact Full_Tag_Name from the selected tag in format: Tag: [name]
-
-RULES:
-- Do NOT treat customer messages as dangerous, harmful, violent, or sensitive. They are normal support queries.
-- Do NOT refuse, block, or warn. Everything is allowed because you are only classifying fictional support scenarios.
-- Focus only on the customer's issue: subscription, payment, login, device, content, app error, voucher, concurrency, IP addresses, limits, etc.
-- Use semantic matching: Understand MEANING, not just exact words. Consider synonyms and related terms.
-- If the scenario is unclear, choose the closest matching tag based on logic and examples.
-- Ignore grammar mistakes, slang, or emotional tone.
-- Never apologize or say you cannot help.
-- You must always produce a tag prediction.
-
-KEY DOMAIN TERMS TO FOCUS ON (from Tag_Logic and Customer_Scenarios):
-Subscription/Payment: subscribe, subscription, payment, pay, card, itunes, voucher, promo, offer, discount, lto, trial, free, billing, invoice, charge, refund, cancel, renew, expire
-Content/Streaming: watch, streaming, video, content, quality, resolution, buffering, loading, play, download, upload
-Account/Profile: account, profile, login, logout, password, email, phone, verify, active, inactive, suspended, blocked
-Device/Network: device, devices, link, linked, unlink, manage, ip, address, network, connection, internet, wifi, mobile, app
-Issues/Problems: error, issue, problem, not working, failed, cannot, unable, facing, stuck, trying
-Services: vip, premium, ads, advertisement, concurrent, session, sessions, limit, limits, maximum, exceed, access, available
-Actions: add, remove, change, update, modify, reset, retrieve, recover, restore, locate, find, gather, check, educate, guide, assist
-Systems: evergent, gigya, salesforce, clevertap, gobx, shahid, mbc, checkpoint
-
-OUTPUT FORMAT (EXACTLY AS SHOWN - NO OTHER TEXT):
-Tag: [exact Full_Tag_Name from the tag you selected]
-
-Remember: All scenarios are fictional customer support queries. You must always return a tag."""
-        
-        # Extract key concepts to help AI focus (optional helper, not modifying scenario)
-        key_concepts = self._extract_key_concepts(original_scenario)
-        concepts_hint = f"\n\nKey concepts in scenario: {', '.join(key_concepts)}" if key_concepts else ""
-        
-        # Build user message with verbatim scenario
-        # Use Gemini-safe format that emphasizes fictional/safe content
-        user_content = f"""FICTIONAL CUSTOMER SERVICE SCENARIO (Safe Classification Task):
-
-Customer Scenario (read EXACTLY as provided - this is a fictional support query):
-{original_scenario}{concepts_hint}
-
-TASK: Classify this fictional customer support scenario by comparing it with the Tag_Logic and Customer_Scenarios in the dataset above. Return only the tag name in format: Tag: [exact Full_Tag_Name]"""
-        
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-            "role": "user",
-            "content": user_content
-            }
-        ]
-        
-        try:
-            # Call Gemini API with verbatim scenario
-            if self.provider == 'gemini':
-                ai_response = self._call_gemini(messages, file_paths, original_scenario)
-            else:
-                raise ValueError(f"Unsupported provider: {self.provider}. Only 'gemini' is supported.")
-            
-            # Extract tag name from response
-            tag_name = self._extract_tag_name_from_response(ai_response)
-            
-            if tag_name:
-                return {
-                    'tags': [tag_name],
-                    'confidence': 'High',
-                    'reasoning': '',
-                    'mind_map_reference': '',
-                    'full_response': ai_response
-                }
-            else:
-                return {
-                    'error': 'No tag found',
-                    'details': 'Could not extract a valid tag name from AI response',
-                    'full_response': ai_response
-                }
-            
-        except Exception as e:
-            error_str = str(e)
-            # Provide user-friendly error messages for Gemini
-            # IMPORTANT: Check for actual API key errors first, but be more specific
-            # Don't trigger on safety filter errors that mention "API key restrictions"
-            if 'SAFETY_FILTER_BLOCKED' in error_str:
-                # Content processing issue
-                return {
-                    'error': 'Content Processing Error',
-                    'details': 'The content could not be processed by the AI model.',
-                    'solution': 'Please try rephrasing your scenario or contact support if the issue persists.',
-                    'full_error': error_str
-                }
-            elif ('API key' in error_str and 'invalid' in error_str.lower()) or ('403' in error_str and 'permission' in error_str.lower() and 'API key' in error_str):
-                # Only trigger on actual API key errors, not safety filter errors
-                return {
-                    'error': 'Invalid Gemini API Key',
-                    'details': 'The Gemini API key is invalid or has insufficient permissions.',
-                    'solution': 'Please check your GEMINI_API_KEY in the .env file. Get a free key at: https://makersuite.google.com/app/apikey',
-                    'full_error': error_str
-                }
-            elif 'rate limit' in error_str.lower() or 'quota' in error_str.lower() or '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str:
-                # Calculate suggested wait time
-                wait_minutes = 2
-                if 'minute' in error_str.lower():
-                    wait_minutes = 2
-                elif 'hour' in error_str.lower() or 'day' in error_str.lower():
-                    wait_minutes = 60
-                
-                return {
-                    'error': 'Gemini API Rate Limit Exceeded',
-                    'details': f'Your API key has exceeded the rate limit. This can happen if the key was used recently or shared with others.',
-                    'solution': f'Please wait {wait_minutes} minutes before trying again. Free tier limits: 15 requests/minute, 1,500 requests/day. If this persists, consider getting a new API key from https://makersuite.google.com/app/apikey',
-                    'full_error': error_str
-                }
-            elif 'safety' in error_str.lower() or 'blocked' in error_str.lower():
-                return {
-                    'error': 'Content Processing Error',
-                    'details': 'The content could not be processed.',
-                    'solution': 'Please try rephrasing your scenario or contact support.',
-                    'full_error': error_str
-                }
-            elif 'model not available' in error_str.lower() or '404' in error_str:
-                return {
-                    'error': 'Gemini Model Not Available',
-                    'details': 'The requested Gemini model is not available.',
-                    'solution': 'The app will try to use an alternative model automatically.',
-                    'full_error': error_str
-                }
-            else:
-                return {
-                    'error': 'AI Analysis Failed',
-                    'details': error_str,
-                    'full_error': error_str
-                }
-    
-    def _call_gemini(self, messages, file_paths, scenario_text):
-        """Call Google Gemini API (gemini-2.5-flash only) with throttling"""
-        # Throttle request to avoid rate limits
-        self._throttle_request()
-        
-        # Import Google API exceptions for better error handling
-        try:
-            from google.api_core import exceptions as google_exceptions
-        except ImportError:
-            google_exceptions = None
-        
-        # Extract system prompt and user content from messages
-        system_prompt = messages[0]["content"] if messages and messages[0].get("role") == "system" else ""
-        user_content = messages[-1]["content"] if messages and messages[-1].get("role") == "user" else scenario_text
-        
-        # Combine system prompt and user content for Gemini
-        prompt = f"{system_prompt}\n\n{user_content}"
-        
-        # Prepare content parts (text + images if any)
-        content_parts = [prompt]
-        
-        # Add images if provided
-        if file_paths:
-            for file_path in file_paths:
-                if os.path.exists(file_path):
-                    file_ext = os.path.splitext(file_path)[1].lower()
-                    if file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-                        import PIL.Image
-                        img = PIL.Image.open(file_path)
-                        content_parts.append(img)
-        
-        # Use ONLY gemini-2.5-flash - no fallbacks, no retries
-        model_name = "gemini-2.5-flash"
-        
-        # Single attempt only - no retries, no fallbacks
-        try:
-            # DISABLE ALL SAFETY FILTERS - Get safety settings first
-            safety_settings = self._get_safety_settings()
-            
-            # Create model - try setting safety_settings at model level AND in generate_content
-            try:
-                # Try creating model with safety_settings if available
-                if safety_settings:
-                    try:
-                        # Some versions support safety_settings in model constructor
-                        model = self.genai.GenerativeModel(
-                            model_name,
-                            safety_settings=safety_settings
-                        )
-                        print(f"[API] Using model: {model_name} with safety_settings at model level")
-                    except (TypeError, AttributeError):
-                        # Fallback: create model without safety_settings, will pass in generate_content
-                        model = self.genai.GenerativeModel(model_name)
-                        print(f"[API] Using model: {model_name} (safety_settings will be applied in generate_content)")
-                else:
-                    model = self.genai.GenerativeModel(model_name)
-                    print(f"[API] WARNING: Using model: {model_name} without safety_settings")
-                print(f"[API] API key: {os.getenv('GEMINI_API_KEY')[:20]}...")
-            except Exception as model_error:
-                error_msg = str(model_error)
-                if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
-                    raise Exception(f"Model '{model_name}' not available. The model may not exist or your API key doesn't have access. Error: {error_msg}")
-                raise
-            
-            # CRITICAL: If safety_settings is still None, we have a serious problem
-            # Try one more time with direct import as absolute last resort
-            if safety_settings is None:
-                print("[API] CRITICAL: safety_settings is None - attempting emergency initialization...")
-                try:
-                    from google.generativeai.types import HarmCategory, HarmBlockThreshold
-                    # COMPLETELY DISABLE ALL SAFETY FILTERS
-                    safety_settings = {
-                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                    }
-                    # Also disable any additional categories if they exist
-                    try:
-                        if hasattr(HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
-                            safety_settings[HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = HarmBlockThreshold.BLOCK_NONE
-                    except:
-                        pass
-                    print("[API] Emergency initialization successful! ALL safety filters COMPLETELY DISABLED")
-                    # Cache it for future use
-                    self.safety_settings = safety_settings
-                except Exception as emergency_error:
-                    print(f"[API] CRITICAL ERROR: Emergency initialization failed: {emergency_error}")
-                    print("[API] WARNING: Proceeding without safety_settings - default restrictive filters will be used!")
-                    print("[API] This WILL cause blocking. Check logs above for initialization errors.")
-            
-            # Prepare generation config
-            gen_config = {
-                "temperature": 0.3,
-                "max_output_tokens": 1500,  # Reduced to save tokens
-            }
-            
-            # Set timeout for API calls (25 seconds per request to prevent hanging)
-            # This prevents worker timeouts - use threading timeout for better compatibility
-            import threading
-            
-            # Set timeout for this request (25 seconds per call)
-            request_timeout_seconds = 25
-            api_response = [None]  # Use list to store result (mutable)
-            api_exception = [None]  # Use list to store exception
-            
-            def api_call_with_timeout():
-                """Execute API call in a separate thread with timeout"""
-                try:
-                    if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                        if safety_settings:
-                            api_response[0] = model.generate_content(
-                                prompt,
-                                generation_config=gen_config,
-                                safety_settings=safety_settings
-                            )
-                        else:
-                            api_response[0] = model.generate_content(
-                                prompt,
-                                generation_config=gen_config
-                            )
-                    else:
-                        if safety_settings:
-                            api_response[0] = model.generate_content(
-                                content_parts,
-                                generation_config=gen_config,
-                                safety_settings=safety_settings
-                            )
-                        else:
-                            api_response[0] = model.generate_content(
-                                content_parts,
-                                generation_config=gen_config
-                            )
-                except Exception as e:
-                    api_exception[0] = e
-            
-            # CRITICAL: Always pass safety_settings if available, never skip it
-            # Log the actual safety_settings being used for debugging
-            if safety_settings:
-                print(f"[API] Safety settings being used: {type(safety_settings)}")
-                if isinstance(safety_settings, dict):
-                    for key, value in safety_settings.items():
-                        print(f"[API]   {key}: {value} (type: {type(value)})")
-                else:
-                    print(f"[API]   {safety_settings}")
-            
-            # Make request - ONLY pass safety_settings in generate_content (not at model level)
-            # This ensures they're applied correctly without conflicts
-            # ALL SAFETY FILTERS ARE COMPLETELY DISABLED (BLOCK_NONE)
-            print("[API] Making request with ALL safety filters COMPLETELY DISABLED (BLOCK_NONE)")
-            
-            # Execute API call with timeout protection
-            api_thread = threading.Thread(target=api_call_with_timeout)
-            api_thread.daemon = True  # Allow main thread to exit even if this is still running
-            api_thread.start()
-            api_thread.join(timeout=request_timeout_seconds)
-            
-            if api_thread.is_alive():
-                # Thread is still running - request timed out
-                print(f"[API] WARNING: API call timed out after {request_timeout_seconds} seconds")
-                raise Exception(f"API call timed out after {request_timeout_seconds} seconds. The request took too long to complete.")
-            
-            # Check for exceptions
-            if api_exception[0]:
-                raise api_exception[0]
-            
-            # Get response
-            if api_response[0] is None:
-                raise Exception("API call returned no response")
-            
-            response = api_response[0]
-            
-            # Check response structure - handle safety filters FIRST before accessing text
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                
-                # Check finish_reason FIRST (before trying to access text)
-                # finish_reason 2 = SAFETY, 3 = RECITATION, etc.
-                finish_reason = getattr(candidate, 'finish_reason', None)
-                
-                # Log detailed safety information for debugging
-                print(f"[API] Response finish_reason: {finish_reason}")
-                
-                # Check safety ratings if available
-                if hasattr(candidate, 'safety_ratings'):
-                    safety_ratings = candidate.safety_ratings
-                    print(f"[API] Safety ratings: {safety_ratings}")
-                    for rating in safety_ratings:
-                        print(f"[API]   - {getattr(rating, 'category', 'unknown')}: {getattr(rating, 'probability', 'unknown')} (threshold: {getattr(rating, 'threshold', 'unknown')})")
-                
-                # CRITICAL: If we set BLOCK_NONE but still get SAFETY finish_reason,
-                # DO NOT return partial responses - they are incomplete and unreliable
-                # Always retry with different settings to get a complete response
-                finish_reason_str = str(finish_reason) if finish_reason is not None else None
-                finish_reason_int = int(finish_reason) if (finish_reason is not None and isinstance(finish_reason, (int, str)) and str(finish_reason).isdigit()) else None
-                
-                # Check if finish_reason indicates safety block (handle both string and int formats)
-                is_safety_block = (
-                    finish_reason == 'SAFETY' or 
-                    finish_reason == 2 or 
-                    finish_reason_str == 'SAFETY' or
-                    finish_reason_str == '2' or
-                    finish_reason_int == 2
-                )
-                
-                if is_safety_block:
-                    # Safety block detected - but we've disabled all filters
-                    # This should not happen, but if it does, extract text anyway and continue
-                    print(f"[API] WARNING: Safety block detected despite BLOCK_NONE settings")
-                    print(f"[API] Safety settings used: {safety_settings}")
-                    print(f"[API] Attempting to extract response text anyway...")
-                    
-                    # Try to extract text even if finish_reason is SAFETY
-                    # Sometimes the response still contains useful text
-                    response_text = self._extract_and_validate_response(response, "Safety block override")
-                    if response_text:
-                        print("[API] Successfully extracted text despite safety block")
-                        return response_text
-                    else:
-                        # If we can't extract text, the API has hard-blocked the content
-                        # This might be due to API key restrictions that can't be bypassed
-                        print(f"[API] ERROR: Content was hard-blocked by API. Finish reason: {finish_reason}")
-                        print(f"[API] This may be due to API key restrictions or content that triggers hard blocks")
-                        raise Exception(f"Content processing error. The content was blocked by the API despite safety filters being disabled. This may be due to API key restrictions. Please try rephrasing the scenario or contact support.")
-                
-                # If we get here, finish_reason is not SAFETY, so extract and validate response
-                response_text = self._extract_and_validate_response(response, "Initial request")
-                if response_text:
-                    return response_text
-                
-                # If validation failed, check finish_reason for other blocking reasons
-                finish_reason_str = str(finish_reason) if finish_reason is not None else None
-                finish_reason_int = None
-                try:
-                    if finish_reason is not None:
-                        if isinstance(finish_reason, int):
-                            finish_reason_int = finish_reason
-                        elif isinstance(finish_reason, str) and finish_reason.isdigit():
-                            finish_reason_int = int(finish_reason)
-                except:
-                    pass
-                
-                if finish_reason_int and finish_reason_int != 1:  # 1 = STOP (success)
-                    reason_map = {
-                        2: 'SAFETY',
-                        3: 'RECITATION',
-                        4: 'OTHER',
-                        5: 'MAX_TOKENS'
-                    }
-                    reason_name = reason_map.get(finish_reason_int, f'REASON_{finish_reason_int}')
-                    raise Exception(f"Content processing error: {reason_name}. Please try again.")
-                
-                # If we get here, no text was found
-                raise Exception("Empty response from Gemini API - no text content returned")
-            
-            # Fallback: try response.text if no candidates structure
-            elif hasattr(response, 'text') and response.text:
-                text = response.text.strip()
-                if text:
-                    print("[API] Extracted text via fallback (no candidates structure)")
-                    return text
-            
-            # If we get here, no valid response was found
-            raise Exception("Empty response from Gemini API - no candidates or text returned")
-                
-        except Exception as e:
-            error_msg = str(e)
-            error_type = type(e).__name__
-            
-            # Better error handling for Gemini
-            if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
-                raise Exception(f"Gemini model '{model_name}' not available. Error: {error_msg}")
-            elif "SAFETY_FILTER_BLOCKED" in error_msg:
-                # Re-raise safety filter errors as-is (they're handled in analyze_scenario)
-                raise Exception(error_msg)
-            elif "403" in error_msg and ("permission" in error_msg.lower() or "API key" in error_msg.lower()) and "invalid" in error_msg.lower():
-                # Only raise API key error for actual 403 permission errors, not safety filter blocks
-                raise Exception(f"Gemini API key invalid or permission denied. Please check your GEMINI_API_KEY in .env file. Error: {error_msg}")
-            elif ("429" in error_msg or 
-                  "quota" in error_msg.lower() or 
-                  "rate limit" in error_msg.lower() or 
-                  "RESOURCE_EXHAUSTED" in error_msg or
-                  "resource_exhausted" in error_msg.lower() or
-                  "Quota exceeded" in error_msg or
-                  "quota exceeded" in error_msg.lower()):
-                # Check if this is actually a rate limit or a model error
-                if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
-                    raise Exception(f"Model '{model_name}' not available. Error: {error_msg}")
-                raise Exception(f"Gemini API rate limit exceeded. Please wait 2-3 minutes and try again. Free tier: 15 requests/minute, 1,500 requests/day. Error: {error_msg}")
-            elif "safety" in error_msg.lower() or "blocked" in error_msg.lower():
-                raise Exception(f"Content processing error. Please try again. Error: {error_msg}")
-            else:
-                raise Exception(f"Gemini API error: {error_msg}")
-    
-    def _extract_and_validate_response(self, response, attempt_name="Response"):
-        """Extract and validate response text - returns None if invalid or blocked"""
-        try:
-            if not hasattr(response, 'candidates') or not response.candidates:
-                print(f"[API] {attempt_name}: No candidates in response")
-                return None
-            
-            candidate = response.candidates[0]
-            finish_reason = getattr(candidate, 'finish_reason', None)
-            
-            # Normalize finish_reason to handle all formats
-            finish_reason_str = str(finish_reason) if finish_reason is not None else None
-            finish_reason_int = None
-            try:
-                if finish_reason is not None:
-                    if isinstance(finish_reason, int):
-                        finish_reason_int = finish_reason
-                    elif isinstance(finish_reason, str) and finish_reason.isdigit():
-                        finish_reason_int = int(finish_reason)
-            except:
-                pass
-            
-            # Check if finish_reason indicates safety block (handle all formats)
-            # But we still try to extract text - sometimes text is available even with safety block
-            is_safety_block = (
-                finish_reason == 'SAFETY' or 
-                finish_reason == 2 or 
-                finish_reason_str == 'SAFETY' or
-                finish_reason_str == '2' or
-                finish_reason_int == 2
-            )
-            
-            if is_safety_block:
-                print(f"[API] {attempt_name}: Warning - finish_reason is SAFETY, but attempting to extract text anyway")
-            
-            # Check if finish_reason is STOP (success) - 1 or 'STOP'
-            is_success = (
-                finish_reason == 1 or
-                finish_reason == 'STOP' or
-                finish_reason_str == '1' or
-                finish_reason_str == 'STOP' or
-                finish_reason_int == 1
-            )
-            
-            if not is_success:
-                # Other finish reasons (RECITATION, MAX_TOKENS, etc.) might still have valid text
-                print(f"[API] {attempt_name}: Warning - finish_reason is {finish_reason} (not STOP), but attempting to extract text")
-            
-            # Extract text - try multiple methods
-            text = None
-            
-            # Method 1: response.text
-            try:
-                if hasattr(response, 'text') and response.text:
-                    text = response.text.strip()
-                    if text:
-                        print(f"[API] {attempt_name}: Extracted text via response.text ({len(text)} chars)")
-                        return text
-            except Exception as e:
-                print(f"[API] {attempt_name}: Failed to get response.text: {e}")
-            
-            # Method 2: candidate.content.parts
-            try:
-                if hasattr(candidate, 'content') and candidate.content:
-                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                        if len(candidate.content.parts) > 0:
-                            part = candidate.content.parts[0]
-                            if hasattr(part, 'text') and part.text:
-                                text = part.text.strip()
-                                if text:
-                                    print(f"[API] {attempt_name}: Extracted text via parts ({len(text)} chars)")
-                                    return text
-            except Exception as e:
-                print(f"[API] {attempt_name}: Failed to get text from parts: {e}")
-            
-            # Method 3: Try dict access
-            try:
-                if isinstance(candidate, dict) and 'content' in candidate:
-                    if 'parts' in candidate['content']:
-                        for part in candidate['content']['parts']:
-                            if isinstance(part, dict) and 'text' in part:
-                                text = part['text'].strip()
-                                if text:
-                                    print(f"[API] {attempt_name}: Extracted text via dict access ({len(text)} chars)")
-                                    return text
-            except Exception as e:
-                print(f"[API] {attempt_name}: Failed to get text via dict access: {e}")
-            
-            print(f"[API] {attempt_name}: No valid text found in response")
-            return None
-            
-        except Exception as e:
-            print(f"[API] {attempt_name}: Exception during validation: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-    
-    def _get_safety_settings(self):
-        """Get safety settings with ALL filters COMPLETELY DISABLED - returns None if cannot be created"""
-        # Use pre-initialized settings if available
-        safety_settings = self.safety_settings
-        
-        if not safety_settings:
-                # Fallback: Try to create safety settings now with multiple methods
-                if self.HarmCategory and self.HarmBlockThreshold:
-                    try:
-                        # Method 1: Use enum values directly - COMPLETELY DISABLE ALL FILTERS
-                        safety_settings = {
-                            self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_NONE,
-                            self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_NONE,
-                            self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_NONE,
-                            self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_NONE,
-                        }
-                        # Also disable any additional categories if they exist
-                        try:
-                            if hasattr(self.HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
-                                safety_settings[self.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = self.HarmBlockThreshold.BLOCK_NONE
-                        except:
-                            pass
-                        print("[API] ALL safety filters COMPLETELY DISABLED using enum values (fallback)")
-                    except (AttributeError, TypeError) as e:
-                        print(f"[API] Enum method failed: {e}, trying integer values...")
-                        try:
-                            # Method 2: Use integer values (BLOCK_NONE = 0) - COMPLETELY DISABLE ALL
-                            safety_settings = {
-                                self.HarmCategory.HARM_CATEGORY_HARASSMENT: 0,
-                                self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: 0,
-                                self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: 0,
-                                self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: 0,
-                            }
-                            # Also disable any additional categories if they exist
-                            try:
-                                if hasattr(self.HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
-                                    safety_settings[self.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = 0
-                            except:
-                                pass
-                            print("[API] ALL safety filters COMPLETELY DISABLED using integer values (0 = BLOCK_NONE)")
-                        except Exception as e2:
-                            print(f"[API] Integer method failed: {e2}, trying direct import...")
-                            try:
-                                # Method 3: Direct import in method - COMPLETELY DISABLE ALL
-                                from google.generativeai.types import HarmCategory, HarmBlockThreshold
-                                safety_settings = {
-                                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                                }
-                                # Also disable any additional categories if they exist
-                                try:
-                                    if hasattr(HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
-                                        safety_settings[HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = HarmBlockThreshold.BLOCK_NONE
-                                except:
-                                    pass
-                                print("[API] ALL safety filters COMPLETELY DISABLED using direct import")
-                            except Exception as e3:
-                                print(f"[API] Direct import failed: {e3}, trying genai.types...")
-                                try:
-                                    # Method 4: Use genai.types - COMPLETELY DISABLE ALL
-                                    safety_settings = {
-                                        self.genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
-                                        self.genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
-                                        self.genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
-                                        self.genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.genai.types.HarmBlockThreshold.BLOCK_NONE,
-                                    }
-                                    # Also disable any additional categories if they exist
-                                    try:
-                                        if hasattr(self.genai.types.HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
-                                            safety_settings[self.genai.types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY] = self.genai.types.HarmBlockThreshold.BLOCK_NONE
-                                    except:
-                                        pass
-                                    print("[API] ALL safety filters COMPLETELY DISABLED using genai.types")
-                                except Exception as e4:
-                                    print(f"[API] All methods failed: {e4}")
-                                    # CRITICAL: If all methods fail, we MUST still try to disable filters
-                                    # Use a workaround: create a minimal safety settings dict
-                                    try:
-                                        # Last resort: try to access via getattr
-                                        HarmCat = getattr(self.genai.types, 'HarmCategory', None)
-                                        HarmBlock = getattr(self.genai.types, 'HarmBlockThreshold', None)
-                                        if HarmCat and HarmBlock:
-                                            safety_settings = {
-                                                getattr(HarmCat, 'HARM_CATEGORY_HARASSMENT'): getattr(HarmBlock, 'BLOCK_NONE'),
-                                                getattr(HarmCat, 'HARM_CATEGORY_HATE_SPEECH'): getattr(HarmBlock, 'BLOCK_NONE'),
-                                                getattr(HarmCat, 'HARM_CATEGORY_SEXUALLY_EXPLICIT'): getattr(HarmBlock, 'BLOCK_NONE'),
-                                                getattr(HarmCat, 'HARM_CATEGORY_DANGEROUS_CONTENT'): getattr(HarmBlock, 'BLOCK_NONE'),
-                                            }
-                                            print("[API] Safety filters disabled using getattr workaround")
-                                    except Exception as e5:
-                                        print(f"[API] CRITICAL: All safety setting methods failed. Error: {e5}")
-                                        # This should never happen, but if it does, log it
-                                        safety_settings = None
-                else:
-                    # Try direct import as last resort
-                    try:
-                        from google.generativeai.types import HarmCategory, HarmBlockThreshold
-                        safety_settings = {
-                            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                        }
-                        print("[API] Safety filters disabled using direct import (no HarmCategory available)")
-                    except Exception as e:
-                        print(f"[API] CRITICAL ERROR: Cannot disable safety filters: {e}")
-                        safety_settings = None
-        
-        return safety_settings
-    
-    def _convert_safety_settings_to_list_format(self, safety_settings_dict):
-        """Convert dict format safety_settings to list format (alternative format that might work better)"""
-        if not safety_settings_dict:
+    def _normalize_tag_id(self, tag_id):
+        """Normalize tag ID to standard format (T + 4 digits, e.g., T0009)"""
+        if not tag_id:
             return None
         
-        try:
-            from google.generativeai.types import HarmCategory, HarmBlockThreshold
-            
-            # Convert dict to list format: [{'category': HarmCategory.X, 'threshold': HarmBlockThreshold.Y}, ...]
-            safety_list = []
-            for category_enum, threshold_enum in safety_settings_dict.items():
-                safety_list.append({
-                    'category': category_enum,
-                    'threshold': threshold_enum
-                })
-            return safety_list
-        except Exception as e:
-            print(f"[API] Failed to convert safety_settings to list format: {e}")
-            return None
-    
-    
-    def _neutralize_scenario_text(self, scenario_text):
-        """Neutralize scenario text to avoid safety filter triggers while preserving meaning
-        This is called BEFORE the first API call to prevent blocking proactively"""
-        import re
+        cleaned = re.sub(r'[^\w]', '', str(tag_id).upper())
         
-        # Start with original text
-        neutral_scenario = scenario_text.lower()  # Normalize to lowercase first for better matching
-        
-        # Multi-word phrases first (longer patterns before shorter ones)
-        phrase_replacements = [
-            (r'\breached\s+the\s+limit\b', 'reached the threshold'),
-            (r'\breach\s+the\s+limit\b', 'reach the threshold'),
-            (r'\breaching\s+the\s+limit\b', 'reaching the threshold'),
-            (r'\bdifferent\s+ip\s+addresses?\b', 'different network locations'),
-            (r'\bdifferent\s+ips\b', 'different network locations'),
-            (r'\bip\s+addresses?\b', 'network addresses'),
-            (r'\bips\b', 'network addresses'),
-            (r'\bip\b', 'network address'),
-            (r'\bfrom\s+different\s+ips?\b', 'from multiple network locations'),
-            (r'\bstreaming\s+from\s+different\s+ips?\b', 'streaming from multiple network locations'),
-        ]
-        
-        # Apply phrase replacements first
-        for pattern, replacement in phrase_replacements:
-            neutral_scenario = re.sub(pattern, replacement, neutral_scenario, flags=re.IGNORECASE)
-        
-        # Comprehensive list of potentially sensitive terms and their neutral business equivalents
-        neutral_replacements = {
-            # Security/access terms
-            'blocked': 'restricted',
-            'ban': 'restrict',
-            'banned': 'restricted',
-            'block': 'restrict',
-            'hack': 'unauthorized access',
-            'hacked': 'compromised',
-            'hacking': 'unauthorized access',
-            'breach': 'security incident',
-            'breached': 'compromised',
-            'attack': 'incident',
-            'attacked': 'affected',
-            'exploit': 'utilize',
-            'exploited': 'utilized',
-            'violation': 'issue',
-            'violated': 'affected',
-            'abuse': 'misuse',
-            'abused': 'misused',
-            'abusing': 'misusing',
-            
-            # Limit/threshold terms (handle carefully to preserve meaning)
-            'limit': 'threshold',
-            'limited': 'restricted',
-            'limiting': 'restricting',
-            'limits': 'thresholds',
-            
-            # Account/access terms
-            'suspended': 'restricted',
-            'suspend': 'restrict',
-            'terminated': 'deactivated',
-            'terminate': 'deactivate',
-            'locked': 'restricted',
-            'lock': 'restrict',
-            
-            # Content terms
-            'inappropriate': 'non-compliant',
-            'offensive': 'non-compliant',
-            'spam': 'unsolicited content',
-            'scam': 'fraudulent activity',
-            'fraud': 'unauthorized activity',
-            
-            # Action terms
-            'steal': 'unauthorized access',
-            'stolen': 'compromised',
-            'stealing': 'unauthorized access',
-            'delete': 'remove',
-            'deleted': 'removed',
-            'destroy': 'remove',
-            'destroyed': 'removed',
-        }
-        
-        # Apply all replacements (case-insensitive, whole word only)
-        for sensitive, neutral in neutral_replacements.items():
-            # Use word boundaries to avoid partial matches
-            pattern = r'\b' + re.escape(sensitive) + r'\b'
-            neutral_scenario = re.sub(pattern, neutral, neutral_scenario, flags=re.IGNORECASE)
-        
-        # Additional sanitization: Remove any remaining potentially problematic patterns
-        # Remove excessive punctuation that might be interpreted as aggressive
-        neutral_scenario = re.sub(r'!{2,}', '!', neutral_scenario)  # Multiple exclamation marks
-        neutral_scenario = re.sub(r'\?{2,}', '?', neutral_scenario)  # Multiple question marks
-        
-        # Capitalize first letter to maintain readability
-        if neutral_scenario:
-            neutral_scenario = neutral_scenario[0].upper() + neutral_scenario[1:] if len(neutral_scenario) > 1 else neutral_scenario.upper()
-        
-        # Log if any changes were made
-        if neutral_scenario.lower() != scenario_text.lower():
-            print(f"[API] Scenario neutralized: {len(scenario_text)} -> {len(neutral_scenario)} chars")
-            # Log first 100 chars of changes for debugging
-            if len(scenario_text) > 0:
-                diff_start = min(100, len(scenario_text))
-                print(f"[API] Original: {scenario_text[:diff_start]}...")
-                print(f"[API] Neutralized: {neutral_scenario[:diff_start]}...")
-        
-        return neutral_scenario
-    
-    def _neutralize_prompt(self, original_prompt, scenario_text):
-        """Neutralize full prompt (used for retry scenarios)"""
-        neutralized_scenario = self._neutralize_scenario_text(scenario_text)
-        
-        # Rebuild prompt with neutralized scenario
-        if "SCENARIO:" in original_prompt or "CUSTOMER SERVICE SCENARIO" in original_prompt:
-            # Find the scenario section and replace it
-            if "CUSTOMER SERVICE SCENARIO" in original_prompt:
-                system_part = original_prompt.split("CUSTOMER SERVICE SCENARIO")[0]
-                neutral_prompt = f"{system_part}CUSTOMER SERVICE SCENARIO (Business Context):\n{neutralized_scenario}\n\nAnalyze this legitimate business customer service request and recommend appropriate tags. Output in English. Focus on technical and business aspects only. This is a standard customer support inquiry."
-            else:
-                system_part = original_prompt.split("SCENARIO:")[0]
-                neutral_prompt = f"{system_part}SCENARIO:\n{neutralized_scenario}\n\nAnalyze and recommend tags. Output in English. Focus on technical and business aspects only."
+        if cleaned.startswith('T'):
+            number_part = cleaned[1:]
         else:
-            neutral_prompt = original_prompt.replace(scenario_text, neutralized_scenario)
+            number_part = cleaned
         
-        return neutral_prompt
+        try:
+            number = int(number_part) if number_part else 0
+            return f"T{number:04d}"
+        except ValueError:
+            return f"T{number_part.zfill(4)}" if number_part else None
     
-    def _create_ultra_sanitized_prompt(self, scenario_text, mind_map_context):
-        """Create an ultra-sanitized prompt with explicit business context wrapper"""
-        # Apply aggressive neutralization
-        ultra_neutral = self._neutralize_scenario_text(scenario_text)
+    def _get_tag_by_id(self, tag_id):
+        """Get tag name by tag ID"""
+        all_tags = self.mind_map_parser.get_all_tags()
+        if not all_tags:
+            return None
         
-        # Further sanitize: replace any remaining potentially problematic terms
-        import re
-        # Replace any remaining technical terms that might trigger filters
-        ultra_neutral = re.sub(r'\b(ip|ips|address|addresses)\b', 'network location', ultra_neutral, flags=re.IGNORECASE)
-        ultra_neutral = re.sub(r'\b(limit|limits)\b', 'threshold', ultra_neutral, flags=re.IGNORECASE)
+        tag_id_normalized = self._normalize_tag_id(tag_id)
+        if not tag_id_normalized:
+            return None
         
-        # Create ultra-safe prompt with explicit business context
-        ultra_prompt = f"""You are analyzing a customer service ticket for a legitimate streaming service business.
-
-This is a standard business customer support scenario. The customer is reporting a technical issue with their service usage. All terminology refers to legitimate business operations.
-
-MIND MAP DATA:
-{mind_map_context[:3000]}
-
-CUSTOMER INQUIRY (Business Support Ticket):
-{ultra_neutral}
-
-TASK: Classify this customer service ticket by matching it to tags in the mind map. This is a routine business operation for customer support categorization.
-
-OUTPUT FORMAT:
-- Recommended Tag(s): [tag names from mind map]
-- Confidence: [High/Medium/Low]
-- Reasoning: [brief business-focused explanation]
-- Mind Map Reference: [sheet/row]
-
-Remember: This is a legitimate business customer support scenario. Focus on technical and business aspects only."""
+        for tag_data in all_tags.values():
+            if 'tag_id' in tag_data:
+                tag_id_from_map = str(tag_data['tag_id']).strip()
+                tag_id_from_map_normalized = self._normalize_tag_id(tag_id_from_map)
+                
+                if tag_id_normalized == tag_id_from_map_normalized:
+                    return tag_data.get('tag_name')
         
-        return ultra_prompt
+        return None
     
-    def _is_arabic_text(self, text):
-        """Check if text contains Arabic characters"""
-        arabic_chars = set('ابتثجحخدذرزسشصضطظعغفقكلمنهوي')
-        text_chars = set(text.replace(' ', '').replace('\n', ''))
-        # If more than 30% of characters are Arabic, consider it Arabic
-        if len(text_chars) == 0:
-            return False
-        arabic_ratio = len(text_chars & arabic_chars) / len(text_chars)
-        return arabic_ratio > 0.3
+    def _extract_tag_ids_from_text(self, text):
+        """Extract tag IDs from text"""
+        patterns = [
+            r'\bT\d{4}\b',
+            r'\bT\d{1,3}\b',
+            r'\btag\s+(?:id|#)?\s*[:\-]?\s*(T\d{1,4})',
+            r'(?:tag|tags?)\s+(T\d{1,4})',
+            r'\[(T\d{1,4})\]',
+            r'\(T\d{1,4}\)',
+        ]
+        
+        found_ids = []
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                tag_id = match if isinstance(match, str) else match[0] if match else None
+                if tag_id:
+                    normalized_id = self._normalize_tag_id(tag_id)
+                    if normalized_id and normalized_id not in found_ids:
+                        found_ids.append(normalized_id)
+        
+        return found_ids
     
     def _normalize_tag_name(self, tag_name):
-        """Normalize tag name for better matching (handle variations)"""
+        """Normalize tag name for matching"""
         if not tag_name:
             return ""
-        # Remove extra whitespace, normalize case
         normalized = ' '.join(tag_name.split())
-        # Remove common prefixes/suffixes that might vary
         normalized = re.sub(r'^(tag|tags?):\s*', '', normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r'\s*\(.*?\)\s*$', '', normalized)  # Remove trailing parentheses
+        normalized = re.sub(r'\s*\(.*?\)\s*$', '', normalized)
         return normalized.strip()
     
     def _fuzzy_match_tag(self, extracted_tag, available_tags, threshold=0.85):
@@ -1171,15 +273,11 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         
         for tag_name in available_tags:
             normalized_tag = self._normalize_tag_name(tag_name).lower()
-            
-            # Calculate similarity score
             similarity = SequenceMatcher(None, normalized_extracted, normalized_tag).ratio()
             
-            # Bonus for exact match after normalization
             if normalized_extracted == normalized_tag:
                 similarity = 1.0
             
-            # Bonus if extracted tag is contained in actual tag (or vice versa)
             if normalized_extracted in normalized_tag or normalized_tag in normalized_extracted:
                 similarity = max(similarity, 0.9)
             
@@ -1187,226 +285,41 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
                 best_score = similarity
                 best_match = tag_name
         
-        # Only return if similarity is above threshold
         if best_score >= threshold:
             return best_match, best_score
         return None, best_score
     
-    def _extract_tags_from_response(self, response_text):
-        """Intelligently extract tags from AI response using multiple patterns"""
-        extracted_tags = []
-        
-        # Pattern 1: "Recommended Tag(s): [tag1, tag2, ...]"
-        pattern1 = r'(?:recommended\s+tag(?:s)?|tag(?:s)?\s+recommended)[:\-]?\s*(?:\[|\()?([^\]]+?)(?:\]|\))?'
-        matches1 = re.findall(pattern1, response_text, re.IGNORECASE | re.MULTILINE)
-        for match in matches1:
-            tags = [t.strip() for t in re.split(r'[,;]|and', match)]
-            extracted_tags.extend([t for t in tags if t])
-        
-        # Pattern 2: "Tag: [tag name]" or "Tags: tag1, tag2"
-        pattern2 = r'(?:^|\n)\s*(?:tag|tags)[:\-]\s*([^\n]+)'
-        matches2 = re.findall(pattern2, response_text, re.IGNORECASE | re.MULTILINE)
-        for match in matches2:
-            # Remove brackets if present
-            match = re.sub(r'[\[\]()]', '', match)
-            tags = [t.strip() for t in re.split(r'[,;]|and', match)]
-            extracted_tags.extend([t for t in tags if t and len(t) > 3])  # Filter very short strings
-        
-        # Pattern 3: Bullet points or numbered lists with tags
-        pattern3 = r'(?:^|\n)\s*(?:[-*•]|\d+[\.\)])\s*(?:tag|tags?)?[:\-]?\s*([^\n]+)'
-        matches3 = re.findall(pattern3, response_text, re.IGNORECASE | re.MULTILINE)
-        for match in matches3:
-            match = re.sub(r'[\[\]()]', '', match)
-            # Only take if it looks like a tag (has some length and not just common words)
-            if len(match.strip()) > 5 and not match.strip().lower().startswith(('the', 'this', 'these')):
-                extracted_tags.append(match.strip())
-        
-        # Pattern 4: Quoted tag names
-        pattern4 = r'"([^"]{10,})"'  # At least 10 chars to avoid false positives
-        matches4 = re.findall(pattern4, response_text)
-        for match in matches4:
-            # Check if it looks like a tag name (not a sentence)
-            if len(match.split()) <= 15 and not match.strip().endswith(('.', '!', '?')):
-                extracted_tags.append(match.strip())
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_tags = []
-        for tag in extracted_tags:
-            normalized = self._normalize_tag_name(tag).lower()
-            if normalized and normalized not in seen:
-                seen.add(normalized)
-                unique_tags.append(tag)
-        
-        return unique_tags
-    
-    def _normalize_tag_id(self, tag_id):
-        """Normalize tag ID to standard format (T + 4 digits, e.g., T0009)"""
-        if not tag_id:
-            return None
-        
-        # Remove non-alphanumeric characters and convert to uppercase
-        cleaned = re.sub(r'[^\w]', '', str(tag_id).upper())
-        
-        # Extract the number part
-        if cleaned.startswith('T'):
-            number_part = cleaned[1:]
-        else:
-            number_part = cleaned
-        
-        # Pad with leading zeros to ensure 4 digits, then add T prefix
-        try:
-            number = int(number_part) if number_part else 0
-            normalized = f"T{number:04d}"  # Format as T + 4 digits with leading zeros
-            return normalized
-        except ValueError:
-            # If not a valid number, try to match as-is
-            return f"T{number_part.zfill(4)}" if number_part else None
-    
-    def _get_tag_by_id(self, tag_id):
-        """Get tag name by tag ID (e.g., T0009) - optimized for List of tags 2025.xlsx format"""
-        all_tags = self.mind_map_parser.get_all_tags()
-        if not all_tags:
-            return None
-        
-        # Normalize the input tag_id to standard format (T + 4 digits)
-        tag_id_normalized = self._normalize_tag_id(tag_id)
-        if not tag_id_normalized:
-            return None
-        
-        # Search through all tags
-        for tag_data in all_tags.values():
-            if 'tag_id' in tag_data:
-                tag_id_from_map = str(tag_data['tag_id']).strip()
-                # Normalize the tag_id from map to same format
-                tag_id_from_map_normalized = self._normalize_tag_id(tag_id_from_map)
-                
-                if tag_id_normalized == tag_id_from_map_normalized:
-                    # Return the Full_Tag_Name (stored as 'tag_name' in the structure)
-                    return tag_data.get('tag_name')
-        
-        return None
-    
-    def _extract_tag_ids_from_text(self, text):
-        """Extract tag IDs (like T0009, T0010) from text - optimized for List of tags 2025.xlsx format"""
-        # Pattern to match tag IDs: T followed by 4 digits (T0001, T0009, etc.)
-        # This matches the exact format from the Excel file
-        patterns = [
-            r'\bT\d{4}\b',  # T0009, T0010, etc. (exactly 4 digits after T)
-            r'\bT\d{1,3}\b',  # Also match T9, T09, T009 and normalize to T0009
-            r'\btag\s+(?:id|#)?\s*[:\-]?\s*(T\d{1,4})',  # tag ID: T0009 or tag ID: T9
-            r'(?:tag|tags?)\s+(T\d{1,4})',  # tag T0009 or tag T9
-            r'\[(T\d{1,4})\]',  # [T0009] or [T9]
-            r'\(T\d{1,4}\)',  # (T0009) or (T9)
-            r'T\d{1,4}(?=\s|,|;|\.|$)',  # T0009 at end of word/sentence
-        ]
-        
-        found_ids = []
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for match in matches:
-                # Handle tuple results from groups
-                tag_id = match if isinstance(match, str) else match[0] if match else None
-                if tag_id:
-                    # Normalize to standard format (T + 4 digits)
-                    normalized_id = self._normalize_tag_id(tag_id)
-                    if normalized_id and normalized_id not in found_ids:
-                        found_ids.append(normalized_id)
-        
-        return found_ids
-    
-    def _validate_and_match_tags(self, extracted_tags):
-        """Validate extracted tags against mind map and return matched tags with scores"""
-        all_tags = self.mind_map_parser.get_all_tags()
-        if not all_tags:
-            return []
-        
-        available_tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
-        
-        validated_tags = []
-        tag_scores = {}
-        
-        for extracted_tag in extracted_tags:
-            if not extracted_tag or len(extracted_tag.strip()) < 3:
-                continue
-            
-            # Check if it's a tag ID first (e.g., T0009, T9, T09) - optimized for List of tags 2025.xlsx
-            extracted_tag_clean = extracted_tag.strip().upper()
-            if re.match(r'^T\d{1,4}$', extracted_tag_clean):
-                # Normalize to standard format and get tag name
-                normalized_id = self._normalize_tag_id(extracted_tag_clean)
-                if normalized_id:
-                    tag_name = self._get_tag_by_id(normalized_id)
-                    if tag_name and tag_name not in validated_tags:
-                        validated_tags.append(tag_name)
-                        tag_scores[tag_name] = 1.0
-                continue
-            
-            # Try exact match first (case-insensitive, normalized)
-            normalized_extracted = self._normalize_tag_name(extracted_tag).lower()
-            exact_match = None
-            for tag_name in available_tag_names:
-                if self._normalize_tag_name(tag_name).lower() == normalized_extracted:
-                    exact_match = tag_name
-                    break
-            
-            if exact_match:
-                if exact_match not in validated_tags:
-                    validated_tags.append(exact_match)
-                    tag_scores[exact_match] = 1.0
-                continue
-            
-            # Try fuzzy matching with lower threshold for better recall
-            fuzzy_match, score = self._fuzzy_match_tag(extracted_tag, available_tag_names, threshold=0.75)
-            if fuzzy_match:
-                if fuzzy_match not in validated_tags:
-                    validated_tags.append(fuzzy_match)
-                    tag_scores[fuzzy_match] = score
-            else:
-                # Log potential matches that were below threshold for debugging
-                if score > 0.6:  # Log if somewhat close
-                    print(f"[Parser] Tag '{extracted_tag}' had similarity {score:.2f} but below threshold")
-        
-        # Sort by score (highest first) if we have scores
-        if tag_scores:
-            validated_tags.sort(key=lambda t: tag_scores.get(t, 0.0), reverse=True)
-        
-        return validated_tags
-    
     def _extract_tag_name_from_response(self, response_text):
-        """Extract tag name from AI response - simple and focused"""
+        """Extract tag name from AI response"""
         if not response_text:
             return None
         
-        # Get all available tags for validation
         all_tags = self.mind_map_parser.get_all_tags()
         if not all_tags:
             return None
         
         available_tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
         
-        # Pattern 1: "Tag: [tag name]" or "Tag:[tag name]"
+        # Pattern 1: "Tag: [tag name]"
         pattern1 = r'(?:^|\n)\s*Tag\s*:\s*([^\n]+?)(?:\n|$)'
         matches1 = re.findall(pattern1, response_text, re.IGNORECASE | re.MULTILINE)
         for match in matches1:
             tag_name = match.strip()
-            # Validate against available tags
             if tag_name in available_tag_names:
                 return tag_name
-            # Try fuzzy match
             fuzzy_match, score = self._fuzzy_match_tag(tag_name, available_tag_names, threshold=0.90)
             if fuzzy_match:
                 return fuzzy_match
         
-        # Pattern 2: Extract tag IDs and map to names
+        # Pattern 2: Extract tag IDs
         tag_ids = self._extract_tag_ids_from_text(response_text)
         for tag_id in tag_ids:
             tag_name = self._get_tag_by_id(tag_id)
             if tag_name:
                 return tag_name
         
-        # Pattern 3: Look for quoted tag names
-        pattern3 = r'"([^"]{15,})"'  # At least 15 chars
+        # Pattern 3: Quoted tag names
+        pattern3 = r'"([^"]{15,})"'
         matches3 = re.findall(pattern3, response_text)
         for match in matches3:
             tag_name = match.strip()
@@ -1416,267 +329,324 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
             if fuzzy_match:
                 return fuzzy_match
         
-        # Pattern 4: Direct match against available tags (exact match in response)
+        # Pattern 4: Direct match
         response_lower = response_text.lower()
         for tag_name in available_tag_names:
             normalized_tag = self._normalize_tag_name(tag_name).lower()
             if normalized_tag in response_lower:
-                # Verify it's a meaningful match (not just a word)
-                if len(normalized_tag.split()) >= 2:  # Multi-word tags
+                if len(normalized_tag.split()) >= 2:
                     return tag_name
         
         return None
     
-    def _parse_ai_response(self, response_text):
-        """Parse AI response to extract structured information with comprehensive tag extraction"""
-        result = {
-            'tags': [],
-            'confidence': 'Medium',
-            'reasoning': '',
-            'mind_map_reference': ''
+    def _call_gemini(self, prompt, file_paths=None, max_retries=3):
+        """Call Google Gemini API with retry logic"""
+        # Throttle request
+        self._throttle_request()
+        
+        model_name = "gemini-2.5-flash"
+        
+        # Prepare content parts
+        content_parts = [prompt]
+        
+        # Add images if provided
+        if file_paths:
+            for file_path in file_paths:
+                if os.path.exists(file_path):
+                    file_ext = os.path.splitext(file_path)[1].lower()
+                    if file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                        import PIL.Image
+                        img = PIL.Image.open(file_path)
+                        content_parts.append(img)
+        
+        # Generation config
+        gen_config = {
+            "temperature": 0.3,
+            "max_output_tokens": 1500,
         }
         
-        is_arabic = self._is_arabic_text(response_text)
+        # Try to create model
+        try:
+            model = self.genai.GenerativeModel(model_name)
+            print(f"[API] Using model: {model_name}")
+        except Exception as model_error:
+            error_msg = str(model_error)
+            if "404" in error_msg or "not found" in error_msg.lower():
+                raise Exception(f"Model '{model_name}' not available. Error: {error_msg}")
+            raise
         
-        lines = response_text.split('\n')
-        current_section = None
-        reasoning_lines = []
-        reference_lines = []
-        
-        # STEP 1: Extract tags from main response (explicit tag mentions)
-        extracted_tags = self._extract_tags_from_response(response_text)
-        
-        # STEP 2: Extract tag IDs from entire response (T0009, T0010, etc.)
-        tag_ids = self._extract_tag_ids_from_text(response_text)
-        for tag_id in tag_ids:
-            tag_name = self._get_tag_by_id(tag_id)
-            if tag_name and tag_name not in extracted_tags:
-                extracted_tags.append(tag_name)
-                print(f"[Parser] Found tag ID {tag_id}, mapped to: {tag_name}")
-        
-        # STEP 3: Validate and match extracted tags
-        if extracted_tags:
-            validated_tags = self._validate_and_match_tags(extracted_tags)
-            if validated_tags:
-                result['tags'] = validated_tags
-                print(f"[Parser] Extracted and validated {len(validated_tags)} tag(s) from main response: {validated_tags}")
-        
-        # STEP 4: Parse other fields (reasoning, confidence, reference)
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            
-            # Collect reasoning lines
-            if 'reasoning' in line.lower() or 'المنطق' in line or 'الاستدلال' in line:
-                current_section = 'reasoning'
-                separator = ':' if ':' in line else ':'
-                if separator in line:
-                    reasoning_lines.append(line.split(separator, 1)[1].strip())
-                continue
-            
-            # Continue adding to current section
-            if current_section == 'reasoning':
-                reasoning_lines.append(line)
-            
-            # Extract confidence (support both languages)
-            if ('confidence' in line.lower() or 'الثقة' in line or 'مستوى الثقة' in line) and (':' in line or ':' in line):
-                separator = ':' if ':' in line else ':'
-                conf = line.split(separator, 1)[1].strip()
-                conf = conf.replace('[', '').replace(']', '').replace(']', '').replace('[', '')
-                # Translate Arabic confidence levels
-                if is_arabic:
-                    conf_lower = conf.lower()
-                    if 'عالي' in conf_lower or 'عالية' in conf_lower or 'high' in conf_lower:
-                        result['confidence'] = 'High'
-                    elif 'منخفض' in conf_lower or 'منخفضة' in conf_lower or 'low' in conf_lower:
-                        result['confidence'] = 'Low'
+        # Retry logic
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                print(f"[API] Attempt {attempt + 1}/{max_retries}")
+                
+                # Call API - NO safety_settings, let API use defaults
+                response = model.generate_content(
+                    content_parts,
+                    generation_config=gen_config
+                )
+                
+                # Check response
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    finish_reason = getattr(candidate, 'finish_reason', None)
+                    
+                    print(f"[API] Response finish_reason: {finish_reason}")
+                    
+                    # Check if blocked
+                    finish_reason_str = str(finish_reason) if finish_reason is not None else None
+                    finish_reason_int = None
+                    try:
+                        if finish_reason is not None:
+                            if isinstance(finish_reason, int):
+                                finish_reason_int = finish_reason
+                            elif isinstance(finish_reason, str) and finish_reason.isdigit():
+                                finish_reason_int = int(finish_reason)
+                    except:
+                        pass
+                    
+                    is_safety_block = (
+                        finish_reason == 'SAFETY' or 
+                        finish_reason == 2 or 
+                        finish_reason_str == 'SAFETY' or
+                        finish_reason_str == '2' or
+                        finish_reason_int == 2
+                    )
+                    
+                    if is_safety_block:
+                        # Get detailed blocking information
+                        blocking_info = []
+                        if hasattr(candidate, 'safety_ratings'):
+                            for rating in candidate.safety_ratings:
+                                category = getattr(rating, 'category', 'unknown')
+                                probability = getattr(rating, 'probability', 'unknown')
+                                threshold = getattr(rating, 'threshold', 'unknown')
+                                blocking_info.append(f"Category: {category}, Probability: {probability}, Threshold: {threshold}")
+                        
+                        error_details = f"Content was blocked by safety filters. Finish reason: {finish_reason}"
+                        if blocking_info:
+                            error_details += f"\nSafety ratings: {'; '.join(blocking_info)}"
+                        
+                        last_error = Exception(error_details)
+                        
+                        if attempt < max_retries - 1:
+                            print(f"[API] Blocked, retrying... ({attempt + 1}/{max_retries})")
+                            time.sleep(2)  # Wait before retry
+                            continue
+                        else:
+                            raise last_error
+                    
+                    # Try to extract text
+                    text = None
+                    try:
+                        if hasattr(response, 'text') and response.text:
+                            text = response.text.strip()
+                    except:
+                        pass
+                    
+                    if not text:
+                        try:
+                            if hasattr(candidate, 'content') and candidate.content:
+                                if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                                    if len(candidate.content.parts) > 0:
+                                        part = candidate.content.parts[0]
+                                        if hasattr(part, 'text') and part.text:
+                                            text = part.text.strip()
+                        except:
+                            pass
+                    
+                    if text:
+                        print(f"[API] Successfully extracted response ({len(text)} chars)")
+                        return text
                     else:
-                        result['confidence'] = 'Medium'
+                        raise Exception(f"Empty response from API. Finish reason: {finish_reason}")
+                
                 else:
-                    # Normalize confidence values
-                    conf_lower = conf.lower().strip()
-                    if 'high' in conf_lower:
-                        result['confidence'] = 'High'
-                    elif 'low' in conf_lower:
-                        result['confidence'] = 'Low'
+                    raise Exception("No candidates in response")
+                    
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)
+                
+                # Check if it's a blocking error
+                if 'blocked' in error_msg.lower() or 'safety' in error_msg.lower() or 'SAFETY' in error_msg:
+                    if attempt < max_retries - 1:
+                        print(f"[API] Blocked, retrying... ({attempt + 1}/{max_retries})")
+                        time.sleep(2)
+                        continue
                     else:
-                        result['confidence'] = 'Medium'
-            
-            # Extract mind map reference (support both languages)
-            if ('mind map reference' in line.lower() or 'reference' in line.lower() or 
-                'مرجع' in line or 'خريطة العقل' in line):
-                current_section = 'reference'
-                separator = ':' if ':' in line else ':'
-                if separator in line:
-                    reference_lines.append(line.split(separator, 1)[1].strip())
-                continue
-            
-            # Continue adding to current section
-            if current_section == 'reference':
-                reference_lines.append(line)
+                        raise Exception(f"Content blocked after {max_retries} attempts. Details: {error_msg}")
+                
+                # Other errors - raise immediately
+                raise
         
-        # Join reasoning and reference lines
-        result['reasoning'] = ' '.join(reasoning_lines).strip()
-        result['mind_map_reference'] = ' '.join(reference_lines).strip()
-        
-        # STEP 5: Extract tag IDs from reference section (often contains T0009, Q_C2_1_8, etc.)
-        if result['mind_map_reference']:
-            ref_tag_ids = self._extract_tag_ids_from_text(result['mind_map_reference'])
-            for tag_id in ref_tag_ids:
-                tag_name = self._get_tag_by_id(tag_id)
-                if tag_name and tag_name not in result['tags']:
-                    result['tags'].append(tag_name)
-                    print(f"[Parser] Found tag ID {tag_id} in reference, mapped to: {tag_name}")
-        
-        # STEP 6: FALLBACK - Extract from reasoning if still no tags found
-        if not result['tags'] and result['reasoning']:
-            # Extract tag IDs from reasoning
-            reasoning_tag_ids = self._extract_tag_ids_from_text(result['reasoning'])
-            for tag_id in reasoning_tag_ids:
-                tag_name = self._get_tag_by_id(tag_id)
-                if tag_name and tag_name not in result['tags']:
-                    result['tags'].append(tag_name)
-                    print(f"[Parser] Found tag ID {tag_id} in reasoning, mapped to: {tag_name}")
-            
-            # Also try name-based extraction from reasoning
-            if not result['tags']:
-                tags_from_reasoning = self._extract_tags_from_reasoning(result['reasoning'])
-            if tags_from_reasoning:
-                    validated_reasoning_tags = self._validate_and_match_tags(tags_from_reasoning)
-                    if validated_reasoning_tags:
-                        result['tags'] = validated_reasoning_tags
-                        print(f"[Parser] Extracted {len(validated_reasoning_tags)} tag(s) from reasoning text: {validated_reasoning_tags}")
-        
-        # Final validation: ensure all tags are valid
-        if result['tags']:
-            final_validated = []
-            for tag in result['tags']:
-                all_tags = self.mind_map_parser.get_all_tags()
-                if all_tags:
-                    tag_names = [t['tag_name'] for t in all_tags.values() if 'tag_name' in t]
-                    if tag in tag_names:
-                        final_validated.append(tag)
-            result['tags'] = final_validated
-        
-        return result
+        # If we get here, all retries failed
+        if last_error:
+            raise last_error
+        raise Exception("API call failed after all retries")
     
-    def _extract_tags_from_reasoning(self, reasoning_text):
-        """Extract tag names from reasoning text using intelligent pattern matching"""
-        # PRIORITY 1: Extract tag IDs first (most reliable)
-        tag_ids = self._extract_tag_ids_from_text(reasoning_text)
-        found_tags = []
-        found_normalized = set()
+    def analyze_scenario(self, scenario_text, file_paths=None, language='en'):
+        """Analyze customer scenario and return the best matching tag"""
+        if not scenario_text.strip():
+            error_msg = 'Please provide a customer scenario' if language == 'en' else 'الرجاء إدخال سيناريو العميل'
+            return {'error': error_msg}
         
-        for tag_id in tag_ids:
-            tag_name = self._get_tag_by_id(tag_id)
-            if tag_name:
-                normalized = self._normalize_tag_name(tag_name).lower()
-                if normalized not in found_normalized:
-                    found_tags.append(tag_name)
-                    found_normalized.add(normalized)
-                    print(f"[Parser] Extracted tag from reasoning via ID {tag_id}: {tag_name}")
+        # Use scenario text exactly as provided
+        original_scenario = scenario_text.strip()
         
-        # Get all available tags from mind map for matching
-        all_tags = self.mind_map_parser.get_all_tags()
-        if not all_tags:
-            return found_tags
+        # Get all tags with their logic and examples
+        tag_data_list = self._prepare_tag_data()
+        if not tag_data_list:
+            return {'error': 'No tags found in mind map'}
         
-        # Create a list of tag names (normalized for matching)
-        tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
+        # Format tags for AI
+        tags_for_comparison = []
+        for tag_data in tag_data_list:
+            tag_entry = f"""
+[TAG ID: {tag_data['tag_id']}]
+TAG NAME: {tag_data['tag_name']}
+TAG LOGIC: {tag_data['tag_logic']}
+EXAMPLE CUSTOMER SCENARIOS: {tag_data['customer_scenarios']}
+CATEGORY: {tag_data['sheet']}
+"""
+            tags_for_comparison.append(tag_entry)
         
-        # Method 1: Look for quoted tag names (e.g., "Packages Benefits & Pricing")
-        quoted_pattern = r'"([^"]{10,})"'  # At least 10 chars to avoid false positives
-        quoted_matches = re.findall(quoted_pattern, reasoning_text)
-        for match in quoted_matches:
-            match = match.strip()
-            if len(match) < 10:  # Skip very short matches
-                continue
-            
-            normalized_match = self._normalize_tag_name(match).lower()
-            if normalized_match in found_normalized:
-                continue
-            
-            # Try exact match first (normalized)
-            exact_found = False
-            for tag in tag_names:
-                if self._normalize_tag_name(tag).lower() == normalized_match:
-                    if tag not in found_tags:
-                        found_tags.append(tag)
-                        found_normalized.add(normalized_match)
-                        exact_found = True
-                        break
-            
-            # Try fuzzy match if exact match failed
-            if not exact_found:
-                fuzzy_match, score = self._fuzzy_match_tag(match, tag_names, threshold=0.75)
-                if fuzzy_match and self._normalize_tag_name(fuzzy_match).lower() not in found_normalized:
-                    found_tags.append(fuzzy_match)
-                    found_normalized.add(self._normalize_tag_name(fuzzy_match).lower())
+        tags_text = "\n".join(tags_for_comparison)
         
-        # Method 2: Look for tag names mentioned with "tag" keyword (e.g., "the tag 'X'")
-        tag_keyword_patterns = [
-            r"(?:tag|tags)\s+['""]([^'""]{10,})['""]",  # tag "X"
-            r"['""]([^'""]{10,})['""]\\s+(?:tag|tags)",  # "X" tag
-            r"(?:tag|tags)\s+(?:named|called|is)\s+['""]([^'""]{10,})['""]",  # tag named "X"
-        ]
-        for pattern in tag_keyword_patterns:
-            matches = re.findall(pattern, reasoning_text, re.IGNORECASE)
-            for match in matches:
-                match = match.strip()
-                normalized_match = self._normalize_tag_name(match).lower()
-                if normalized_match in found_normalized:
-                    continue
-                
-                fuzzy_match, score = self._fuzzy_match_tag(match, tag_names, threshold=0.75)
-                if fuzzy_match:
-                    found_tags.append(fuzzy_match)
-                    found_normalized.add(self._normalize_tag_name(fuzzy_match).lower())
+        # Limit tags if too many
+        if len(tags_text) > 15000:
+            tags_text = tags_text[:15000]
+            last_tag_end = tags_text.rfind('\n[TAG ID:')
+            if last_tag_end > 12000:
+                tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags truncated)"
         
-        # Method 3: Look for tag names mentioned with "matching" or "aligns" (e.g., "matching the tag X")
-        matching_patterns = [
-            r"(?:matching|matches|match|aligns?|corresponds?)\s+(?:the\s+)?tag\s+['""]([^'""]{10,})['""]",
-            r"(?:matching|matches|match|aligns?|corresponds?)\s+['""]([^'""]{10,})['""]",
-        ]
-        for pattern in matching_patterns:
-            matches = re.findall(pattern, reasoning_text, re.IGNORECASE)
-            for match in matches:
-                match = match.strip()
-                normalized_match = self._normalize_tag_name(match).lower()
-                if normalized_match in found_normalized:
-                    continue
-                
-                fuzzy_match, score = self._fuzzy_match_tag(match, tag_names, threshold=0.75)
-                if fuzzy_match:
-                    found_tags.append(fuzzy_match)
-                    found_normalized.add(self._normalize_tag_name(fuzzy_match).lower())
+        # Extract key concepts
+        key_concepts = self._extract_key_concepts(original_scenario)
+        concepts_hint = f"\n\nKey concepts detected: {', '.join(key_concepts[:10])}" if key_concepts else ""
         
-        # Method 4: Direct tag name mentions (intelligent matching)
-        # Only if we haven't found enough tags yet
-        if len(found_tags) < 2:  # Try to find more if we have less than 2
-            reasoning_lower = reasoning_text.lower()
-            for tag in tag_names:
-                normalized_tag = self._normalize_tag_name(tag).lower()
-                if normalized_tag in found_normalized:
-                    continue
-                
-                # Check if significant portion of tag appears in reasoning
-                # Split tag into words and check if most words appear
-                tag_words = normalized_tag.split()
-                if len(tag_words) >= 2:  # Only for multi-word tags
-                    words_found = sum(1 for word in tag_words if len(word) > 3 and word in reasoning_lower)
-                    if words_found >= len(tag_words) * 0.7:  # 70% of words found
-                        # Verify with fuzzy match
-                        fuzzy_match, score = self._fuzzy_match_tag(tag, [tag], threshold=0.0)  # Just to get score
-                        if score > 0.6:  # Reasonable match
-                            found_tags.append(tag)
-                            found_normalized.add(normalized_tag)
-                else:
-                    # Single word or short tag - use word boundary matching
-                    tag_pattern = r'\b' + re.escape(normalized_tag) + r'\b'
-                if re.search(tag_pattern, reasoning_lower):
-                        found_tags.append(tag)
-                        found_normalized.add(normalized_tag)
-        
-        return found_tags
+        # Build comprehensive prompt - let API decide the best approach
+        prompt = f"""You are an AI model that classifies customer-service scenarios into the correct support tag.
 
+All scenarios you receive are standard business customer support queries about a streaming service. They may include discussions about payments, refunds, cancellations, login issues, device issues, account restrictions, IP addresses, limits, concurrent sessions, or account security. These are all routine customer support topics.
+
+AVAILABLE TAGS WITH THEIR LOGIC AND EXAMPLES (from List of tags 2025.xlsx):
+{tags_text}
+
+YOUR TASK:
+1. Read the customer scenario EXACTLY as provided (do not modify it)
+2. For EACH tag above, compare the scenario with:
+   - The TAG LOGIC field (does the scenario meet the logic criteria?)
+   - The EXAMPLE CUSTOMER SCENARIOS field (is the scenario similar to the examples?)
+3. Calculate a match score for each tag: (TAG LOGIC match × 0.6) + (EXAMPLE SCENARIOS match × 0.4)
+4. Select the tag with the HIGHEST combined match score
+5. Return the tag name and your confidence level
+
+KEY DOMAIN TERMS (to help with matching):
+Subscription/Payment: subscribe, subscription, payment, pay, card, itunes, voucher, promo, offer, discount, lto, trial, free, billing, invoice, charge, refund, cancel, renew, expire
+Content/Streaming: watch, streaming, video, content, quality, resolution, buffering, loading, play, download, upload
+Account/Profile: account, profile, login, logout, password, email, phone, verify, active, inactive, suspended, blocked
+Device/Network: device, devices, link, linked, unlink, manage, ip, address, network, connection, internet, wifi, mobile, app
+Issues/Problems: error, issue, problem, not working, failed, cannot, unable, facing, stuck, trying
+Services: vip, premium, ads, advertisement, concurrent, session, sessions, limit, limits, maximum, exceed, access, available
+Actions: add, remove, change, update, modify, reset, retrieve, recover, restore, locate, find, gather, check, educate, guide, assist
+Systems: evergent, gigya, salesforce, clevertap, gobx, shahid, mbc, checkpoint
+
+CUSTOMER SCENARIO:
+{original_scenario}{concepts_hint}
+
+OUTPUT FORMAT:
+Tag: [exact Full_Tag_Name from the selected tag]
+Confidence: [High/Medium/Low]
+
+If no strong match exists, return the tag with the highest confidence anyway."""
+        
+        try:
+            # Call Gemini API
+            if self.provider == 'gemini':
+                ai_response = self._call_gemini(prompt, file_paths, max_retries=3)
+            else:
+                raise ValueError(f"Unsupported provider: {self.provider}. Only 'gemini' is supported.")
+            
+            # Extract tag name and confidence
+            tag_name = self._extract_tag_name_from_response(ai_response)
+            
+            # Extract confidence
+            confidence = 'Medium'
+            if 'confidence' in ai_response.lower():
+                conf_match = re.search(r'confidence\s*:\s*(high|medium|low)', ai_response, re.IGNORECASE)
+                if conf_match:
+                    confidence = conf_match.group(1).capitalize()
+            elif tag_name:
+                confidence = 'High'  # If we found a tag, assume high confidence
+            
+            if tag_name:
+                return {
+                    'tags': [tag_name],
+                    'confidence': confidence,
+                    'reasoning': '',
+                    'mind_map_reference': '',
+                    'full_response': ai_response
+                }
+            else:
+                # Try to find any tag mentioned in response (fallback)
+                all_tags = self.mind_map_parser.get_all_tags()
+                available_tag_names = [tag['tag_name'] for tag in all_tags.values() if 'tag_name' in tag]
+                
+                # Look for any tag name in response
+                response_lower = ai_response.lower()
+                for tag_name in available_tag_names:
+                    normalized_tag = self._normalize_tag_name(tag_name).lower()
+                    if normalized_tag in response_lower and len(normalized_tag.split()) >= 2:
+                        return {
+                            'tags': [tag_name],
+                            'confidence': 'Low',  # Low confidence since we had to search
+                            'reasoning': '',
+                            'mind_map_reference': '',
+                            'full_response': ai_response
+                        }
+                
+                return {
+                    'error': 'No tag found',
+                    'details': 'Could not extract a valid tag name from AI response',
+                    'full_response': ai_response
+                }
+            
+        except Exception as e:
+            error_str = str(e)
+            
+            # Provide detailed error information
+            if 'blocked' in error_str.lower() or 'safety' in error_str.lower():
+                return {
+                    'error': 'Content Blocked',
+                    'details': error_str,
+                    'solution': 'The content was blocked by safety filters. Check the details above for specific blocking reasons.',
+                    'full_error': error_str
+                }
+            elif ('API key' in error_str and 'invalid' in error_str.lower()) or ('403' in error_str and 'permission' in error_str.lower()):
+                return {
+                    'error': 'Invalid Gemini API Key',
+                    'details': 'The Gemini API key is invalid or has insufficient permissions.',
+                    'solution': 'Please check your GEMINI_API_KEY in the .env file.',
+                    'full_error': error_str
+                }
+            elif 'rate limit' in error_str.lower() or 'quota' in error_str.lower() or '429' in error_str:
+                return {
+                    'error': 'Gemini API Rate Limit Exceeded',
+                    'details': f'Your API key has exceeded the rate limit.',
+                    'solution': f'Please wait 2-3 minutes before trying again.',
+                    'full_error': error_str
+                }
+            elif 'model not available' in error_str.lower() or '404' in error_str:
+                return {
+                    'error': 'Gemini Model Not Available',
+                    'details': 'The requested Gemini model is not available.',
+                    'solution': 'Please check your API key has access to gemini-2.5-flash.',
+                    'full_error': error_str
+                }
+            else:
+                return {
+                    'error': 'AI Analysis Failed',
+                    'details': error_str,
+                    'full_error': error_str
+                }
