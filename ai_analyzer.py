@@ -30,6 +30,7 @@ class AIAnalyzer:
                 raise ValueError("GEMINI_API_KEY not found. Get a free key at: https://makersuite.google.com/app/apikey")
             try:
                 import google.generativeai as genai
+                from google.generativeai.types import HarmCategory, HarmBlockThreshold
                 genai.configure(api_key=api_key)
                 self.genai = genai
                 print("[INIT] Gemini API initialized successfully")
@@ -382,11 +383,10 @@ class AIAnalyzer:
                 print(f"[API] Attempt {attempt + 1}/{max_retries}")
                 
                 # Safety settings - Block nothing to avoid false positives
+                # Dynamically set all categories to BLOCK_NONE to be robust
                 safety_settings = {
-                    "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-                    "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                    "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-                    "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+                    category: HarmBlockThreshold.BLOCK_NONE
+                    for category in HarmCategory
                 }
 
                 # Call API - NO safety_settings, let API use defaults
