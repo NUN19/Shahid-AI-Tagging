@@ -544,45 +544,25 @@ CATEGORY: {tag_data['sheet']}
             if last_tag_end > 12000:
                 tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags truncated)"
         
-        # Extract key concepts
-        key_concepts = self._extract_key_concepts(original_scenario)
-        concepts_hint = f"\n\nKey concepts detected: {', '.join(key_concepts[:10])}" if key_concepts else ""
-        
-        # Build comprehensive prompt - let API decide the best approach
-        prompt = f"""You are an AI model that classifies customer-service scenarios into the correct support tag.
+        # Build simplified prompt - focus on direct classification
+        prompt = f"""You are an expert customer support analyst.
+Classify the following customer scenario into exactly one of the provided tags.
 
-All scenarios you receive are standard business customer support queries about a streaming service. They may include discussions about payments, refunds, cancellations, login issues, device issues, account restrictions, IP addresses, limits, concurrent sessions, or account security. These are all routine customer support topics.
-
-AVAILABLE TAGS WITH THEIR LOGIC AND EXAMPLES (from List of tags 2025.xlsx):
+AVAILABLE TAGS:
 {tags_text}
 
-YOUR TASK:
-1. Read the customer scenario EXACTLY as provided (do not modify it)
-2. For EACH tag above, compare the scenario with:
-   - The TAG LOGIC field (does the scenario meet the logic criteria?)
-   - The EXAMPLE CUSTOMER SCENARIOS field (is the scenario similar to the examples?)
-3. Calculate a match score for each tag: (TAG LOGIC match × 0.6) + (EXAMPLE SCENARIOS match × 0.4)
-4. Select the tag with the HIGHEST combined match score
-5. Return the tag name and your confidence level
-
-KEY DOMAIN TERMS (to help with matching):
-Subscription/Payment: subscribe, subscription, payment, pay, card, itunes, voucher, promo, offer, discount, lto, trial, free, billing, invoice, charge, refund, cancel, renew, expire
-Content/Streaming: watch, streaming, video, content, quality, resolution, buffering, loading, play, download, upload
-Account/Profile: account, profile, login, logout, password, email, phone, verify, active, inactive, suspended, blocked
-Device/Network: device, devices, link, linked, unlink, manage, ip, address, network, connection, internet, wifi, mobile, app
-Issues/Problems: error, issue, problem, not working, failed, cannot, unable, facing, stuck, trying
-Services: vip, premium, ads, advertisement, concurrent, session, sessions, limit, limits, maximum, exceed, access, available
-Actions: add, remove, change, update, modify, reset, retrieve, recover, restore, locate, find, gather, check, educate, guide, assist
-Systems: evergent, gigya, salesforce, clevertap, gobx, shahid, mbc, checkpoint
-
 CUSTOMER SCENARIO:
-{original_scenario}{concepts_hint}
+{original_scenario}
+
+INSTRUCTIONS:
+1. Analyze the customer scenario carefully.
+2. Select the most appropriate tag from the list above.
+3. Return the Tag Name and your Confidence level.
 
 OUTPUT FORMAT:
-Tag: [exact Full_Tag_Name from the selected tag]
+Tag: [Full Tag Name]
 Confidence: [High/Medium/Low]
-
-If no strong match exists, return the tag with the highest confidence anyway."""
+"""
         
         try:
             # Call Gemini API
