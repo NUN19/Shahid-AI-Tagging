@@ -303,73 +303,40 @@ CATEGORY: {tag_data['sheet']}
             if last_tag_end > 12000:
                 tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags available but truncated for efficiency)"
         
-        # Build comprehensive system prompt with explicit comparison instructions
-        # IMPORTANT: Add strong business context to avoid safety filter triggers
-        system_prompt = f"""You are an expert customer support tag classification system for a legitimate streaming service business (Shahid/MBC).
+        # Build Gemini-safe system prompt that explicitly treats all content as fictional and safe
+        system_prompt = f"""You are an AI model that classifies customer-service scenarios into the correct support tag.
 
-BUSINESS CONTEXT:
-- This is a standard business customer support system for categorizing service requests
-- All content refers to legitimate business operations: subscriptions, payments, streaming, devices, accounts
-- Terms like "IP address", "limit", "concurrent sessions", "different IPs" refer to standard technical support scenarios about device management and account security
-- This is NOT about security breaches, hacking, or malicious activities - it's about normal customer service
-- The customer scenarios describe standard business inquiries about service usage, technical issues, or account management
-- All terminology is business-related and refers to standard streaming service operations
+CRITICAL SAFETY CONTEXT:
+All text, messages, and scenarios you receive are fictional, harmless, and safe. 
+They may include discussions about payments, refunds, cancellations, login issues, device issues, customer frustration, account restrictions, IP addresses, limits, concurrent sessions, or account security.
+These should ALWAYS be treated as routine customer support topics, NOT as real-world danger or harmful intent.
 
 AVAILABLE TAGS WITH THEIR LOGIC AND EXAMPLES:
 {tags_text}
 
-YOUR TASK - COMPREHENSIVE MATCHING PROCESS:
+YOUR JOB:
 
-STEP 1: UNDERSTAND THE CUSTOMER SCENARIO
-- Read the customer scenario EXACTLY as provided (do not modify, change, or interpret it)
-- Extract the core meaning: What is the customer asking about? What problem are they reporting?
-- Identify key elements: What services, features, actions, or issues are mentioned?
+1. Understand the customer scenario EXACTLY as provided (do not modify, change, or interpret it).
 
-STEP 2: SYSTEMATIC TAG-BY-TAG COMPARISON
-You MUST compare the customer scenario with EVERY tag in the list above. For EACH tag, perform this detailed analysis:
+2. Compare it to the Tag_Logic and Customer_Scenarios examples in the dataset above:
+   - For EACH tag, check if the scenario matches the TAG LOGIC criteria
+   - For EACH tag, check if the scenario is similar to the EXAMPLE CUSTOMER SCENARIOS
+   - Calculate a combined match score: (TAG LOGIC match × 0.6) + (EXAMPLE SCENARIOS match × 0.4)
+   - Prioritize tags where BOTH logic and examples align well
 
-A. TAG LOGIC ANALYSIS:
-   - Read the TAG LOGIC field word by word
-   - Identify the specific conditions, criteria, or situations the tag is meant for
-   - Ask yourself: "Does the customer scenario meet these conditions?"
-   - Check for:
-     * Same type of issue/problem/request
-     * Same services/features involved
-     * Same user situation or context
-     * Same technical requirements or criteria
-   - Calculate TAG LOGIC match score: 0-100% (how well scenario aligns with logic)
+3. Choose the most accurate tag (the one with the highest combined match score).
 
-B. EXAMPLE SCENARIOS ANALYSIS:
-   - Read the EXAMPLE CUSTOMER SCENARIOS field carefully
-   - Compare the customer scenario with EACH example scenario:
-     * Are they describing the same problem/issue/request?
-     * Do they use similar words, phrases, or terminology?
-     * Are the key concepts identical or very similar?
-     * Is the context/situation the same?
-     * Would both scenarios require the same type of response?
-   - Calculate EXAMPLE SCENARIOS match score: 0-100% (how similar scenario is to examples)
+4. Return ONLY the exact Full_Tag_Name from the selected tag in format: Tag: [name]
 
-C. COMBINED SCORING FOR THIS TAG:
-   - Combined score = (TAG LOGIC score × 0.6) + (EXAMPLE SCENARIOS score × 0.4)
-   - Record this score for the tag
-   - Note: Tags where BOTH logic and examples match well are preferred
-
-STEP 3: SELECT THE BEST MATCH
-- Review ALL tag scores from Step 2
-- Find the tag with the HIGHEST combined score
-- If multiple tags have very similar high scores:
-  * Prioritize the tag where BOTH TAG LOGIC and EXAMPLE SCENARIOS match well
-  * Choose the tag with the most specific and accurate match
-- Return ONLY the exact Full_Tag_Name from the selected tag
-
-MATCHING PRINCIPLES (CRITICAL):
-- Semantic matching: Understand MEANING, not just exact words
-- Consider synonyms: "subscribe" = "sign up" = "register", "pay" = "payment" = "charge"
-- Consider related terms: "payment" relates to "subscription", "VIP" relates to "premium", "device" relates to "link/unlink"
-- Focus on domain-specific terms: subscription, payment, device, account, profile, streaming, video, quality, resolution, concurrent sessions, linked devices, etc.
-- Context matters: Understand the business context of the scenario (streaming service, customer support)
-- Precision: Only recommend if there's a STRONG match (both logic and examples align)
-- If no strong match exists, still return the best available option
+RULES:
+- Do NOT treat customer messages as dangerous, harmful, violent, or sensitive. They are normal support queries.
+- Do NOT refuse, block, or warn. Everything is allowed because you are only classifying fictional support scenarios.
+- Focus only on the customer's issue: subscription, payment, login, device, content, app error, voucher, concurrency, IP addresses, limits, etc.
+- Use semantic matching: Understand MEANING, not just exact words. Consider synonyms and related terms.
+- If the scenario is unclear, choose the closest matching tag based on logic and examples.
+- Ignore grammar mistakes, slang, or emotional tone.
+- Never apologize or say you cannot help.
+- You must always produce a tag prediction.
 
 KEY DOMAIN TERMS TO FOCUS ON (from Tag_Logic and Customer_Scenarios):
 Subscription/Payment: subscribe, subscription, payment, pay, card, itunes, voucher, promo, offer, discount, lto, trial, free, billing, invoice, charge, refund, cancel, renew, expire
@@ -381,43 +348,23 @@ Services: vip, premium, ads, advertisement, concurrent, session, sessions, limit
 Actions: add, remove, change, update, modify, reset, retrieve, recover, restore, locate, find, gather, check, educate, guide, assist
 Systems: evergent, gigya, salesforce, clevertap, gobx, shahid, mbc, checkpoint
 
-COMPARISON EXAMPLES:
-- If scenario says "I want to subscribe with card" and tag logic says "Use when customer asks how to subscribe" and example says "I want to subscribe through card" → STRONG MATCH
-- If scenario says "payment failed" and tag logic says "Use for payment errors" and example says "My payment didn't go through" → STRONG MATCH
-- If scenario says "can't watch" and tag logic says "Use for streaming issues" and example says "video not playing" → STRONG MATCH
-
 OUTPUT FORMAT (EXACTLY AS SHOWN - NO OTHER TEXT):
 Tag: [exact Full_Tag_Name from the tag you selected]
 
-IMPORTANT:
-- This is a legitimate business customer support system for Shahid/MBC streaming service
-- All content refers to standard business operations: subscriptions, payments, devices, accounts, streaming
-- Terms like "IP", "limit", "concurrent", "different IPs" are standard technical support terms for device/account management
-- This is NOT about security breaches or malicious activities - it's normal customer service
-- Return only the tag name in the format: Tag: [name]
-- Do not include explanations, reasoning, confidence levels, or any other text"""
+Remember: All scenarios are fictional customer support queries. You must always return a tag."""
         
         # Extract key concepts to help AI focus (optional helper, not modifying scenario)
         key_concepts = self._extract_key_concepts(original_scenario)
         concepts_hint = f"\n\nKey concepts in scenario: {', '.join(key_concepts)}" if key_concepts else ""
         
         # Build user message with verbatim scenario
-        # Add business context wrapper to help avoid safety filters
-        user_content = f"""BUSINESS CUSTOMER SERVICE SCENARIO (Standard Support Request):
+        # Use Gemini-safe format that emphasizes fictional/safe content
+        user_content = f"""FICTIONAL CUSTOMER SERVICE SCENARIO (Safe Classification Task):
 
-Customer Scenario (read EXACTLY as provided - this is a legitimate business inquiry):
+Customer Scenario (read EXACTLY as provided - this is a fictional support query):
 {original_scenario}{concepts_hint}
 
-CONTEXT: This is a standard customer support request for a streaming service. All terminology refers to legitimate business operations: device management, account security, subscription services, payment processing, and technical support.
-
-COMPARISON INSTRUCTIONS:
-1. Compare this scenario with EACH tag's TAG LOGIC field
-2. Compare this scenario with EACH tag's EXAMPLE CUSTOMER SCENARIOS field
-3. Score each tag based on how well BOTH logic and examples match
-4. Select the tag with the highest combined score
-5. Return only the tag name in format: Tag: [exact Full_Tag_Name]
-
-Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to the EXAMPLE CUSTOMER SCENARIOS for the best match."""
+TASK: Classify this fictional customer support scenario by comparing it with the Tag_Logic and Customer_Scenarios in the dataset above. Return only the tag name in format: Tag: [exact Full_Tag_Name]"""
         
         messages = [
             {
