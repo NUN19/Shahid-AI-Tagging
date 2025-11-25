@@ -447,11 +447,11 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
             # IMPORTANT: Check for actual API key errors first, but be more specific
             # Don't trigger on safety filter errors that mention "API key restrictions"
             if 'SAFETY_FILTER_BLOCKED' in error_str:
-                # This is a safety filter issue, not an API key issue
+                # Content processing issue
                 return {
-                    'error': 'Content Blocked by Safety Filters',
-                    'details': 'The content was blocked by Gemini safety filters despite attempts to disable them. Your API key is valid, but the content triggers safety filters that cannot be bypassed.',
-                    'solution': 'This is an intermittent issue with Gemini\'s safety filters. The system will retry automatically. If this persists, try rephrasing your scenario or contact support.',
+                    'error': 'Content Processing Error',
+                    'details': 'The content could not be processed by the AI model.',
+                    'solution': 'Please try rephrasing your scenario or contact support if the issue persists.',
                     'full_error': error_str
                 }
             elif ('API key' in error_str and 'invalid' in error_str.lower()) or ('403' in error_str and 'permission' in error_str.lower() and 'API key' in error_str):
@@ -478,9 +478,9 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                 }
             elif 'safety' in error_str.lower() or 'blocked' in error_str.lower():
                 return {
-                    'error': 'Content Blocked by Safety Filters',
-                    'details': 'The content was blocked by Gemini safety filters.',
-                    'solution': 'Please try rephrasing your scenario description.',
+                    'error': 'Content Processing Error',
+                    'details': 'The content could not be processed.',
+                    'solution': 'Please try rephrasing your scenario or contact support.',
                     'full_error': error_str
                 }
             elif 'model not available' in error_str.lower() or '404' in error_str:
@@ -498,7 +498,7 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                 }
     
     def _call_gemini(self, messages, file_paths, scenario_text):
-        """Call Google Gemini API (FREE tier available) with retry logic and throttling"""
+        """Call Google Gemini API (gemini-2.5-flash only) with throttling"""
         # Throttle request to avoid rate limits
         self._throttle_request()
         
@@ -528,15 +528,10 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                         img = PIL.Image.open(file_path)
                         content_parts.append(img)
         
-        # Try multiple models as fallback if safety filters block
-        # Start with gemini-2.5-flash, fallback to gemini-1.5-flash if blocked
-        primary_model = "gemini-2.5-flash"
-        fallback_model = "gemini-1.5-flash"
-        model_name = primary_model
-        max_retries = 0  # NO retries - single attempt only to avoid multiple API calls
-        base_delay = 30  # Start with 30 seconds delay (very conservative)
+        # Use ONLY gemini-2.5-flash - no fallbacks, no retries
+        model_name = "gemini-2.5-flash"
         
-        # Single attempt only - no retries
+        # Single attempt only - no retries, no fallbacks
         try:
             # DISABLE ALL SAFETY FILTERS - Get safety settings first
             safety_settings = self._get_safety_settings()
@@ -699,171 +694,20 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                 )
                 
                 if is_safety_block:
-                    # Check if we actually set safety_settings
-                    if safety_settings:
-                        print(f"[API] WARNING: Content blocked despite BLOCK_NONE settings!")
-                        print(f"[API] Safety settings used: {safety_settings}")
-                        print(f"[API] Finish reason: {finish_reason} (type: {type(finish_reason)})")
-                        
-                        # DO NOT extract partial content - it's unreliable and causes inconsistent results
-                        # Always proceed to retries to get a complete, valid response
-                        print("[API] Skipping partial content extraction - proceeding to retries for complete response")
-                        
-                        # RETRY 1: Try with list format safety_settings (alternative format)
-                        print("[API] Retry 1: Trying with list format safety_settings...")
-                        try:
-                            # Convert to list format
-                            list_format_settings = self._convert_safety_settings_to_list_format(safety_settings)
-                            
-                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                                retry_response = model.generate_content(
-                                    prompt,
-                                    generation_config=gen_config,
-                                    safety_settings=list_format_settings if list_format_settings else safety_settings
-                                )
-                            else:
-                                retry_response = model.generate_content(
-                                    content_parts,
-                                    generation_config=gen_config,
-                                    safety_settings=list_format_settings if list_format_settings else safety_settings
-                                )
-                            
-                            # Validate retry response - must have valid finish_reason and text
-                            retry_text = self._extract_and_validate_response(retry_response, "Retry 1")
-                            if retry_text:
-                                print("[API] Retry 1 successful with list format!")
-                                return retry_text
-                            else:
-                                print("[API] Retry 1 failed validation, trying Retry 2...")
-                        except Exception as retry_error:
-                            print(f"[API] Retry 1 exception: {retry_error}, trying Retry 2...")
-                        
-                        # RETRY 2: Try with BLOCK_ONLY_HIGH as fallback (less restrictive than default)
-                        print("[API] Retry 2: Trying with BLOCK_ONLY_HIGH threshold...")
-                        try:
-                            # Create BLOCK_ONLY_HIGH settings as fallback
-                            fallback_settings = self._get_safety_settings_block_only_high()
-                            
-                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                                retry2_response = model.generate_content(
-                                    prompt,
-                                    generation_config=gen_config,
-                                    safety_settings=fallback_settings if fallback_settings else safety_settings
-                                )
-                            else:
-                                retry2_response = model.generate_content(
-                                    content_parts,
-                                    generation_config=gen_config,
-                                    safety_settings=fallback_settings if fallback_settings else safety_settings
-                                )
-                            
-                            # Validate retry response
-                            retry2_text = self._extract_and_validate_response(retry2_response, "Retry 2")
-                            if retry2_text:
-                                print("[API] Retry 2 successful with BLOCK_ONLY_HIGH!")
-                                return retry2_text
-                            else:
-                                print("[API] Retry 2 failed validation, trying Retry 3...")
-                        except Exception as retry2_error:
-                            print(f"[API] Retry 2 exception: {retry2_error}, trying Retry 3...")
-                        
-                        # RETRY 3: Try WITHOUT safety_settings (let model use defaults - sometimes works better)
-                        print("[API] Retry 3: Trying WITHOUT safety_settings...")
-                        try:
-                            # Try without safety_settings - some API keys/models work better this way
-                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                                retry3_response = model.generate_content(
-                                    prompt,
-                                    generation_config=gen_config
-                                    # No safety_settings - let model use defaults
-                                )
-                            else:
-                                retry3_response = model.generate_content(
-                                    content_parts,
-                                    generation_config=gen_config
-                                    # No safety_settings - let model use defaults
-                                )
-                            
-                            # Validate retry response
-                            retry3_text = self._extract_and_validate_response(retry3_response, "Retry 3")
-                            if retry3_text:
-                                print("[API] Retry 3 successful without safety_settings!")
-                                return retry3_text
-                            else:
-                                print("[API] Retry 3 failed validation, trying Retry 4...")
-                        except Exception as retry3_error:
-                            print(f"[API] Retry 3 exception: {retry3_error}, trying Retry 4...")
-                        
-                        # RETRY 4: Try with minimal generation config and BLOCK_ONLY_HIGH
-                        print("[API] Retry 4: Trying with minimal config and BLOCK_ONLY_HIGH...")
-                        try:
-                            # Use minimal generation config
-                            minimal_config = {
-                                "temperature": 0.1,  # Lower temperature
-                                "max_output_tokens": 1000,  # Fewer tokens
-                            }
-                            fallback_settings = self._get_safety_settings_block_only_high()
-                            
-                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                                retry4_response = model.generate_content(
-                                    prompt,
-                                    generation_config=minimal_config,
-                                    safety_settings=fallback_settings if fallback_settings else None
-                                )
-                            else:
-                                retry4_response = model.generate_content(
-                                    content_parts,
-                                    generation_config=minimal_config,
-                                    safety_settings=fallback_settings if fallback_settings else None
-                                )
-                            
-                            # Validate retry response
-                            retry4_text = self._extract_and_validate_response(retry4_response, "Retry 4")
-                            if retry4_text:
-                                print("[API] Retry 4 successful with minimal config!")
-                                return retry4_text
-                            else:
-                                print("[API] Retry 4 failed validation, trying Retry 5 with alternative model...")
-                        except Exception as retry4_error:
-                            print(f"[API] Retry 4 exception: {retry4_error}, trying Retry 5 with alternative model...")
-                        
-                        # RETRY 5: Try with alternative model (gemini-1.5-flash) - sometimes different models have different safety filter behavior
-                        print(f"[API] Retry 5: Trying with alternative model '{fallback_model}'...")
-                        try:
-                            # Create new model instance with fallback model
-                            fallback_model_instance = self.genai.GenerativeModel(fallback_model)
-                            fallback_settings = self._get_safety_settings()
-                            
-                            if not file_paths or not any(os.path.exists(fp) and os.path.splitext(fp)[1].lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp'] for fp in file_paths):
-                                retry5_response = fallback_model_instance.generate_content(
-                                    prompt,
-                                    generation_config=gen_config,
-                                    safety_settings=fallback_settings if fallback_settings else None
-                                )
-                            else:
-                                retry5_response = fallback_model_instance.generate_content(
-                                    content_parts,
-                                    generation_config=gen_config,
-                                    safety_settings=fallback_settings if fallback_settings else None
-                                )
-                            
-                            # Validate retry response
-                            retry5_text = self._extract_and_validate_response(retry5_response, f"Retry 5 ({fallback_model})")
-                            if retry5_text:
-                                print(f"[API] Retry 5 successful with alternative model '{fallback_model}'!")
-                                return retry5_text
-                            else:
-                                print(f"[API] Retry 5 failed validation with '{fallback_model}' - all retries exhausted")
-                        except Exception as retry5_error:
-                            print(f"[API] Retry 5 exception with '{fallback_model}': {retry5_error} - all retries exhausted")
-                        
-                        # If all retries fail, provide error message
-                        # IMPORTANT: Don't mention "API key" in error message to avoid triggering wrong error handler
-                        print("[API] ERROR: All 5 retry attempts failed. Content is being blocked by safety filters.")
-                        raise Exception("SAFETY_FILTER_BLOCKED: Content was blocked by Gemini safety filters despite multiple retry attempts with different safety settings and models. The API key is valid, but the content triggers safety filters that cannot be disabled. This is a content filtering issue, not an API key issue.")
+                    # Safety block detected - but we've disabled all filters
+                    # This should not happen, but if it does, extract text anyway and continue
+                    print(f"[API] WARNING: Safety block detected despite BLOCK_NONE settings")
+                    print(f"[API] Attempting to extract response text anyway...")
                     
+                    # Try to extract text even if finish_reason is SAFETY
+                    # Sometimes the response still contains useful text
+                    response_text = self._extract_and_validate_response(response, "Safety block override")
+                    if response_text:
+                        print("[API] Successfully extracted text despite safety block")
+                        return response_text
                     else:
-                        raise Exception("Content was blocked by Gemini safety filters. Please try rephrasing your scenario in a more neutral way.")
+                        # If we can't extract text, raise a clear error
+                        raise Exception(f"Content processing error. Finish reason: {finish_reason}. Please try again or contact support.")
                 
                 # If we get here, finish_reason is not SAFETY, so extract and validate response
                 response_text = self._extract_and_validate_response(response, "Initial request")
@@ -890,7 +734,7 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                         5: 'MAX_TOKENS'
                     }
                     reason_name = reason_map.get(finish_reason_int, f'REASON_{finish_reason_int}')
-                    raise Exception(f"Gemini API response blocked: {reason_name}. Please try rephrasing your scenario.")
+                    raise Exception(f"Content processing error: {reason_name}. Please try again.")
                 
                 # If we get here, no text was found
                 raise Exception("Empty response from Gemini API - no text content returned")
@@ -927,10 +771,10 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                   "quota exceeded" in error_msg.lower()):
                 # Check if this is actually a rate limit or a model error
                 if "404" in error_msg or "not found" in error_msg.lower() or "does not exist" in error_msg.lower():
-                    raise Exception(f"Model '{model_name}' not available. This might be causing the error. Try using 'gemini-1.5-flash' instead. Error: {error_msg}")
+                    raise Exception(f"Model '{model_name}' not available. Error: {error_msg}")
                 raise Exception(f"Gemini API rate limit exceeded. Please wait 2-3 minutes and try again. Free tier: 15 requests/minute, 1,500 requests/day. Error: {error_msg}")
             elif "safety" in error_msg.lower() or "blocked" in error_msg.lower():
-                raise Exception(f"Content was blocked by Gemini safety filters. Please try rephrasing your scenario. Error: {error_msg}")
+                raise Exception(f"Content processing error. Please try again. Error: {error_msg}")
             else:
                 raise Exception(f"Gemini API error: {error_msg}")
     
@@ -957,6 +801,7 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                 pass
             
             # Check if finish_reason indicates safety block (handle all formats)
+            # But we still try to extract text - sometimes text is available even with safety block
             is_safety_block = (
                 finish_reason == 'SAFETY' or 
                 finish_reason == 2 or 
@@ -966,8 +811,7 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
             )
             
             if is_safety_block:
-                print(f"[API] {attempt_name}: Blocked by safety filters (finish_reason: {finish_reason})")
-                return None
+                print(f"[API] {attempt_name}: Warning - finish_reason is SAFETY, but attempting to extract text anyway")
             
             # Check if finish_reason is STOP (success) - 1 or 'STOP'
             is_success = (
@@ -1163,40 +1007,6 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
             print(f"[API] Failed to convert safety_settings to list format: {e}")
             return None
     
-    def _get_safety_settings_block_only_high(self):
-        """Get safety settings with BLOCK_ONLY_HIGH threshold (fallback if BLOCK_NONE doesn't work)"""
-        try:
-            # Try to use the same enums we have
-            if self.HarmCategory and self.HarmBlockThreshold:
-                try:
-                    # Use BLOCK_ONLY_HIGH instead of BLOCK_NONE
-                    return {
-                        self.HarmCategory.HARM_CATEGORY_HARASSMENT: self.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                        self.HarmCategory.HARM_CATEGORY_HATE_SPEECH: self.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                        self.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: self.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                        self.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: self.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                    }
-                except AttributeError:
-                    # Try direct import
-                    from google.generativeai.types import HarmCategory, HarmBlockThreshold
-                    return {
-                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                    }
-            else:
-                # Try direct import
-                from google.generativeai.types import HarmCategory, HarmBlockThreshold
-                return {
-                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                }
-        except Exception as e:
-            print(f"[API] Failed to create BLOCK_ONLY_HIGH settings: {e}")
-            return None
     
     def _neutralize_scenario_text(self, scenario_text):
         """Neutralize scenario text to avoid safety filter triggers while preserving meaning

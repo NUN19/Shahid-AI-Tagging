@@ -124,36 +124,36 @@ class MindMapParser:
                             continue
                 else:
                     # Legacy format - use old extraction method
-                    # Try to identify tag columns (common patterns)
-                    tag_columns = []
-                    for col in df.columns:
-                        col_str = str(col).lower()
-                        if any(keyword in col_str for keyword in ['tag', 'category', 'type', 'label', 'classification']):
-                            tag_columns.append(col)
-                    
-                    # If no obvious tag column found, use first column as potential tag column
-                    if not tag_columns and len(df.columns) > 0:
-                        tag_columns = [df.columns[0]]
-                    
-                    # Extract tags from identified columns
-                    for col in tag_columns:
-                        for idx, row in df.iterrows():
-                            try:
-                                tag_value = str(row[col]).strip()
-                                if tag_value and tag_value.lower() not in ['nan', 'none', '', 'none', 'n/a']:
-                                    # Create unique key for tag
-                                    tag_key = f"{tag_value}_{sheet_name}_{idx}"
-                                    if tag_key not in self.tags:
-                                        self.tags[tag_key] = {
-                                            'tag_name': tag_value,
-                                            'sheet': sheet_name,
-                                            'row': idx,
-                                            'logic': self._extract_row_logic(row, df.columns),
-                                            'full_row': row.to_dict()
-                                        }
-                            except Exception as row_error:
-                                # Skip problematic rows instead of crashing
-                                continue
+                # Try to identify tag columns (common patterns)
+                tag_columns = []
+                for col in df.columns:
+                    col_str = str(col).lower()
+                    if any(keyword in col_str for keyword in ['tag', 'category', 'type', 'label', 'classification']):
+                        tag_columns.append(col)
+                
+                # If no obvious tag column found, use first column as potential tag column
+                if not tag_columns and len(df.columns) > 0:
+                    tag_columns = [df.columns[0]]
+                
+                # Extract tags from identified columns
+                for col in tag_columns:
+                    for idx, row in df.iterrows():
+                        try:
+                            tag_value = str(row[col]).strip()
+                            if tag_value and tag_value.lower() not in ['nan', 'none', '', 'none', 'n/a']:
+                                # Create unique key for tag
+                                tag_key = f"{tag_value}_{sheet_name}_{idx}"
+                                if tag_key not in self.tags:
+                                    self.tags[tag_key] = {
+                                        'tag_name': tag_value,
+                                        'sheet': sheet_name,
+                                        'row': idx,
+                                        'logic': self._extract_row_logic(row, df.columns),
+                                        'full_row': row.to_dict()
+                                    }
+                        except Exception as row_error:
+                            # Skip problematic rows instead of crashing
+                            continue
             except Exception as sheet_error:
                 # Skip problematic sheets instead of crashing
                 print(f"Warning: Error processing sheet '{sheet_name}': {sheet_error}, skipping...")
@@ -231,37 +231,37 @@ class MindMapParser:
                                 continue
                     else:
                         # Legacy format - use old method
-                        summary.append(f"\nColumn Structure: {', '.join(str(col) for col in df.columns)}")
-                        summary.append("\n" + "-" * 80)
-                        summary.append("COMPLETE TAG LOGIC (All Rows with Full Details):")
-                        summary.append("-" * 80)
-                        
-                        # Include ALL rows with complete logic, not just samples
-                        for idx, row in df.iterrows():
-                            try:
-                                row_details = []
-                                tag_name = None
-                                
-                                # Extract all column values for this row
-                                for col in df.columns:
-                                    try:
-                                        val = str(row[col]).strip()
-                                        if val and val.lower() not in ['nan', 'none', '']:
-                                            # Identify potential tag name column
-                                            col_lower = str(col).lower()
-                                            if any(keyword in col_lower for keyword in ['tag', 'category', 'type', 'label', 'name', 'classification']):
-                                                if not tag_name:
-                                                    tag_name = val
-                                            row_details.append(f"{col}: {val}")
-                                    except:
-                                        continue
-                                
-                                if row_details:
-                                    # Format: Tag Name (if found) | All Logic Details
-                                    tag_prefix = f"TAG: {tag_name} | " if tag_name else ""
-                                    summary.append(f"\nRow {idx}: {tag_prefix}{' | '.join(row_details)}")
-                            except Exception as row_error:
-                                continue
+                    summary.append(f"\nColumn Structure: {', '.join(str(col) for col in df.columns)}")
+                    summary.append("\n" + "-" * 80)
+                    summary.append("COMPLETE TAG LOGIC (All Rows with Full Details):")
+                    summary.append("-" * 80)
+                    
+                    # Include ALL rows with complete logic, not just samples
+                    for idx, row in df.iterrows():
+                        try:
+                            row_details = []
+                            tag_name = None
+                            
+                            # Extract all column values for this row
+                            for col in df.columns:
+                                try:
+                                    val = str(row[col]).strip()
+                                    if val and val.lower() not in ['nan', 'none', '']:
+                                        # Identify potential tag name column
+                                        col_lower = str(col).lower()
+                                        if any(keyword in col_lower for keyword in ['tag', 'category', 'type', 'label', 'name', 'classification']):
+                                            if not tag_name:
+                                                tag_name = val
+                                        row_details.append(f"{col}: {val}")
+                                except:
+                                    continue
+                            
+                            if row_details:
+                                # Format: Tag Name (if found) | All Logic Details
+                                tag_prefix = f"TAG: {tag_name} | " if tag_name else ""
+                                summary.append(f"\nRow {idx}: {tag_prefix}{' | '.join(row_details)}")
+                        except Exception as row_error:
+                            continue
                     
                     summary.append("\n" + "-" * 80)
             except Exception as e:

@@ -774,14 +774,7 @@
                         errorMessage += '\n\n💡 Solution: ' + result.solution;
                     }
                     
-                    // Special handling for safety filter errors
-                    if (result.error.includes('safety') || result.error.includes('blocked')) {
-                        errorMessage += '\n\n📝 Tips to avoid blocking:';
-                        errorMessage += '\n• Use neutral, professional language';
-                        errorMessage += '\n• Avoid sensitive topics or extreme language';
-                        errorMessage += '\n• Focus on the technical/business aspects';
-                        errorMessage += '\n• Try rephrasing in a more formal tone';
-                    }
+                    // No special handling needed - all errors are generic now
                     
                     showError(errorMessage);
                 } else {
