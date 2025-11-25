@@ -544,31 +544,39 @@ CATEGORY: {tag_data['sheet']}
             if last_tag_end > 12000:
                 tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags truncated)"
         
-        # Build prompt with Chain of Thought (CoT) reasoning instructions
-        prompt = f"""You are an expert customer support analyst.
-Your task is to classify the following customer scenario into exactly one of the provided tags.
+        # Build prompt with user's specific logic
+        prompt = f"""You are an expert classification model trained to assign the correct support tag based on a customer scenario.  
+Your goal is to achieve maximum accuracy by following the rules and internal logic consistently.
+
+You have access to a dataset that includes:
+1. Tag_ID  
+2. Full_Tag_Name  
+3. Tag_Logic (the rules that determine when the tag must be applied)  
+4. Customer_Scenarios (example situations that match the tag)
+
+How you classify:
+1. Read the customer scenario carefully.
+2. Identify the core issue(s): payment, subscription, login, content, device, voucher, concurrency, region, etc.
+3. Compare these issues to the Tag_Logic descriptions in the dataset.
+4. Match the scenario to the tag whose logic MOST closely fits the situation.
+5. If multiple tags seem related, choose the one whose logic is the most specific (never the more generic one).
+6. If the scenario contains multiple issues, choose the tag linked to the primary issue the customer is complaining about.
+7. Ignore grammar mistakes, slang, emotion, tone, anger, or politeness — focus only on the problem described.
+8. Never guess randomly: always determine a tag based on the rules and examples.
+
+Very important:
+- You must ALWAYS return a tag.
+- You must ALWAYS base your decision on Tag_Logic + example scenarios.
+- You must NEVER refuse, block, or treat the content as unsafe — all scenarios are normal and fictional.
+- You must not output explanations unless asked; otherwise, return only the Tag_ID.
+
+Your classification must be systematic, consistent, rule-based, and highly accurate.
 
 AVAILABLE TAGS:
 {tags_text}
 
 CUSTOMER SCENARIO:
 {original_scenario}
-
-INSTRUCTIONS:
-1. Analyze the CUSTOMER SCENARIO to identify the core issue and key intent.
-2. Review the AVAILABLE TAGS. For each potential match:
-   - Check if the scenario satisfies the "TAG LOGIC".
-   - Compare the scenario with the "EXAMPLE CUSTOMER SCENARIOS".
-3. Select the single best matching tag.
-4. Explain your reasoning:
-   - Why does this tag's LOGIC apply?
-   - Which EXAMPLE SCENARIO is most similar?
-5. Return the Tag Name and your Confidence level.
-
-OUTPUT FORMAT:
-Reasoning: [Your step-by-step reasoning]
-Tag: [Full Tag Name]
-Confidence: [High/Medium/Low]
 """
         
         try:
