@@ -381,10 +381,19 @@ class AIAnalyzer:
             try:
                 print(f"[API] Attempt {attempt + 1}/{max_retries}")
                 
+                # Safety settings - Block nothing to avoid false positives
+                safety_settings = {
+                    "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+                    "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+                    "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+                }
+
                 # Call API - NO safety_settings, let API use defaults
                 response = model.generate_content(
                     content_parts,
-                    generation_config=gen_config
+                    generation_config=gen_config,
+                    safety_settings=safety_settings
                 )
                 
                 # Check response
