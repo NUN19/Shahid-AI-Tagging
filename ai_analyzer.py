@@ -383,11 +383,24 @@ class AIAnalyzer:
                 print(f"[API] Attempt {attempt + 1}/{max_retries}")
                 
                 # Safety settings - Block nothing to avoid false positives
-                # Dynamically set all categories to BLOCK_NONE to be robust
                 from google.generativeai.types import HarmCategory, HarmBlockThreshold
+                
+                # Explicitly list supported categories to avoid 400 errors with unsupported ones
+                # The API only accepts specific categories
+                supported_categories = [
+                    HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                ]
+                
+                # Add Civic Integrity if available (it appears in some API versions)
+                if hasattr(HarmCategory, 'HARM_CATEGORY_CIVIC_INTEGRITY'):
+                    supported_categories.append(HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY)
+                
                 safety_settings = {
                     category: HarmBlockThreshold.BLOCK_NONE
-                    for category in HarmCategory
+                    for category in supported_categories
                 }
 
                 # Call API - NO safety_settings, let API use defaults
