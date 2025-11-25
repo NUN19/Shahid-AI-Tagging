@@ -538,10 +538,10 @@ CATEGORY: {tag_data['sheet']}
         tags_text = "\n".join(tags_for_comparison)
         
         # Limit tags if too many
-        if len(tags_text) > 15000:
-            tags_text = tags_text[:15000]
+        if len(tags_text) > 500000:
+            tags_text = tags_text[:500000]
             last_tag_end = tags_text.rfind('\n[TAG ID:')
-            if last_tag_end > 12000:
+            if last_tag_end > 450000:
                 tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags truncated)"
         
         # Build prompt with user's specific logic
