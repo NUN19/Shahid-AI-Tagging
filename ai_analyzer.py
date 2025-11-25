@@ -544,9 +544,9 @@ CATEGORY: {tag_data['sheet']}
             if last_tag_end > 12000:
                 tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags truncated)"
         
-        # Build simplified prompt - focus on direct classification
+        # Build prompt with Chain of Thought (CoT) reasoning instructions
         prompt = f"""You are an expert customer support analyst.
-Classify the following customer scenario into exactly one of the provided tags.
+Your task is to classify the following customer scenario into exactly one of the provided tags.
 
 AVAILABLE TAGS:
 {tags_text}
@@ -555,11 +555,18 @@ CUSTOMER SCENARIO:
 {original_scenario}
 
 INSTRUCTIONS:
-1. Analyze the customer scenario carefully.
-2. Select the most appropriate tag from the list above.
-3. Return the Tag Name and your Confidence level.
+1. Analyze the CUSTOMER SCENARIO to identify the core issue and key intent.
+2. Review the AVAILABLE TAGS. For each potential match:
+   - Check if the scenario satisfies the "TAG LOGIC".
+   - Compare the scenario with the "EXAMPLE CUSTOMER SCENARIOS".
+3. Select the single best matching tag.
+4. Explain your reasoning:
+   - Why does this tag's LOGIC apply?
+   - Which EXAMPLE SCENARIO is most similar?
+5. Return the Tag Name and your Confidence level.
 
 OUTPUT FORMAT:
+Reasoning: [Your step-by-step reasoning]
 Tag: [Full Tag Name]
 Confidence: [High/Medium/Low]
 """
