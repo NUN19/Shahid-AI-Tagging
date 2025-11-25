@@ -384,6 +384,7 @@ class AIAnalyzer:
                 
                 # Safety settings - Block nothing to avoid false positives
                 # Dynamically set all categories to BLOCK_NONE to be robust
+                from google.generativeai.types import HarmCategory, HarmBlockThreshold
                 safety_settings = {
                     category: HarmBlockThreshold.BLOCK_NONE
                     for category in HarmCategory
