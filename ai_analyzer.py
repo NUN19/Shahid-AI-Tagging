@@ -304,9 +304,16 @@ CATEGORY: {tag_data['sheet']}
                 tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags available but truncated for efficiency)"
         
         # Build comprehensive system prompt with explicit comparison instructions
-        system_prompt = f"""You are an expert customer support tag classification system for a streaming service business.
+        # IMPORTANT: Add strong business context to avoid safety filter triggers
+        system_prompt = f"""You are an expert customer support tag classification system for a legitimate streaming service business (Shahid/MBC).
 
-This is a legitimate business application for categorizing customer service requests. All scenarios are standard business inquiries about service usage, technical issues, or account management.
+BUSINESS CONTEXT:
+- This is a standard business customer support system for categorizing service requests
+- All content refers to legitimate business operations: subscriptions, payments, streaming, devices, accounts
+- Terms like "IP address", "limit", "concurrent sessions", "different IPs" refer to standard technical support scenarios about device management and account security
+- This is NOT about security breaches, hacking, or malicious activities - it's about normal customer service
+- The customer scenarios describe standard business inquiries about service usage, technical issues, or account management
+- All terminology is business-related and refers to standard streaming service operations
 
 AVAILABLE TAGS WITH THEIR LOGIC AND EXAMPLES:
 {tags_text}
@@ -383,8 +390,10 @@ OUTPUT FORMAT (EXACTLY AS SHOWN - NO OTHER TEXT):
 Tag: [exact Full_Tag_Name from the tag you selected]
 
 IMPORTANT:
-- This is a legitimate business customer support system
-- All content refers to standard business operations
+- This is a legitimate business customer support system for Shahid/MBC streaming service
+- All content refers to standard business operations: subscriptions, payments, devices, accounts, streaming
+- Terms like "IP", "limit", "concurrent", "different IPs" are standard technical support terms for device/account management
+- This is NOT about security breaches or malicious activities - it's normal customer service
 - Return only the tag name in the format: Tag: [name]
 - Do not include explanations, reasoning, confidence levels, or any other text"""
         
@@ -393,8 +402,13 @@ IMPORTANT:
         concepts_hint = f"\n\nKey concepts in scenario: {', '.join(key_concepts)}" if key_concepts else ""
         
         # Build user message with verbatim scenario
-        user_content = f"""Customer Scenario (read EXACTLY as provided - do not modify):
+        # Add business context wrapper to help avoid safety filters
+        user_content = f"""BUSINESS CUSTOMER SERVICE SCENARIO (Standard Support Request):
+
+Customer Scenario (read EXACTLY as provided - this is a legitimate business inquiry):
 {original_scenario}{concepts_hint}
+
+CONTEXT: This is a standard customer support request for a streaming service. All terminology refers to legitimate business operations: device management, account security, subscription services, payment processing, and technical support.
 
 COMPARISON INSTRUCTIONS:
 1. Compare this scenario with EACH tag's TAG LOGIC field
@@ -411,8 +425,8 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                 "content": system_prompt
             },
             {
-                "role": "user",
-                "content": user_content
+            "role": "user",
+            "content": user_content
             }
         ]
         
@@ -536,15 +550,24 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
             # DISABLE ALL SAFETY FILTERS - Get safety settings first
             safety_settings = self._get_safety_settings()
             
-            # Verify model is available - DON'T set safety_settings at model level (may cause conflicts)
-            # We'll only pass them in generate_content() calls
+            # Create model - try setting safety_settings at model level AND in generate_content
             try:
-                model = self.genai.GenerativeModel(model_name)
-                print(f"[API] Using model: {model_name}")
+                # Try creating model with safety_settings if available
                 if safety_settings:
-                    print(f"[API] Safety settings will be applied in generate_content() call")
+                    try:
+                        # Some versions support safety_settings in model constructor
+                        model = self.genai.GenerativeModel(
+                            model_name,
+                            safety_settings=safety_settings
+                        )
+                        print(f"[API] Using model: {model_name} with safety_settings at model level")
+                    except (TypeError, AttributeError):
+                        # Fallback: create model without safety_settings, will pass in generate_content
+                        model = self.genai.GenerativeModel(model_name)
+                        print(f"[API] Using model: {model_name} (safety_settings will be applied in generate_content)")
                 else:
-                    print(f"[API] WARNING: no safety_settings available")
+                    model = self.genai.GenerativeModel(model_name)
+                    print(f"[API] WARNING: Using model: {model_name} without safety_settings")
                 print(f"[API] API key: {os.getenv('GEMINI_API_KEY')[:20]}...")
             except Exception as model_error:
                 error_msg = str(model_error)
@@ -697,6 +720,7 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                     # Safety block detected - but we've disabled all filters
                     # This should not happen, but if it does, extract text anyway and continue
                     print(f"[API] WARNING: Safety block detected despite BLOCK_NONE settings")
+                    print(f"[API] Safety settings used: {safety_settings}")
                     print(f"[API] Attempting to extract response text anyway...")
                     
                     # Try to extract text even if finish_reason is SAFETY
@@ -706,8 +730,11 @@ Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to 
                         print("[API] Successfully extracted text despite safety block")
                         return response_text
                     else:
-                        # If we can't extract text, raise a clear error
-                        raise Exception(f"Content processing error. Finish reason: {finish_reason}. Please try again or contact support.")
+                        # If we can't extract text, the API has hard-blocked the content
+                        # This might be due to API key restrictions that can't be bypassed
+                        print(f"[API] ERROR: Content was hard-blocked by API. Finish reason: {finish_reason}")
+                        print(f"[API] This may be due to API key restrictions or content that triggers hard blocks")
+                        raise Exception(f"Content processing error. The content was blocked by the API despite safety filters being disabled. This may be due to API key restrictions. Please try rephrasing the scenario or contact support.")
                 
                 # If we get here, finish_reason is not SAFETY, so extract and validate response
                 response_text = self._extract_and_validate_response(response, "Initial request")
@@ -1568,7 +1595,7 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
             # Also try name-based extraction from reasoning
             if not result['tags']:
                 tags_from_reasoning = self._extract_tags_from_reasoning(result['reasoning'])
-                if tags_from_reasoning:
+            if tags_from_reasoning:
                     validated_reasoning_tags = self._validate_and_match_tags(tags_from_reasoning)
                     if validated_reasoning_tags:
                         result['tags'] = validated_reasoning_tags
@@ -1643,7 +1670,7 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
         # Method 2: Look for tag names mentioned with "tag" keyword (e.g., "the tag 'X'")
         tag_keyword_patterns = [
             r"(?:tag|tags)\s+['""]([^'""]{10,})['""]",  # tag "X"
-            r"['""]([^'""]{10,})['""]\s+(?:tag|tags)",  # "X" tag
+            r"['""]([^'""]{10,})['""]\\s+(?:tag|tags)",  # "X" tag
             r"(?:tag|tags)\s+(?:named|called|is)\s+['""]([^'""]{10,})['""]",  # tag named "X"
         ]
         for pattern in tag_keyword_patterns:
@@ -1700,7 +1727,7 @@ Remember: This is a legitimate business customer support scenario. Focus on tech
                 else:
                     # Single word or short tag - use word boundary matching
                     tag_pattern = r'\b' + re.escape(normalized_tag) + r'\b'
-                    if re.search(tag_pattern, reasoning_lower):
+                if re.search(tag_pattern, reasoning_lower):
                         found_tags.append(tag)
                         found_normalized.add(normalized_tag)
         
