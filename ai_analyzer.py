@@ -106,8 +106,154 @@ class AIAnalyzer:
         # Record this request
         self.request_times.append(current_time)
     
+    def _prepare_tag_comparison_data(self):
+        """Prepare structured tag data for comprehensive comparison"""
+        all_tags = self.mind_map_parser.get_all_tags()
+        if not all_tags:
+            return []
+        
+        tag_data_list = []
+        for tag_key, tag_info in all_tags.items():
+            if 'tag_name' in tag_info:
+                tag_data_list.append({
+                    'tag_id': tag_info.get('tag_id', ''),
+                    'tag_name': tag_info.get('tag_name', ''),
+                    'tag_logic': tag_info.get('logic', ''),
+                    'customer_scenarios': tag_info.get('customer_scenarios', ''),
+                    'sheet': tag_info.get('sheet', '')
+                })
+        
+        return tag_data_list
+    
+    def _calculate_text_similarity(self, text1, text2):
+        """Calculate similarity between two texts using SequenceMatcher"""
+        if not text1 or not text2:
+            return 0.0
+        
+        # Normalize texts
+        text1_normalized = ' '.join(text1.lower().split())
+        text2_normalized = ' '.join(text2.lower().split())
+        
+        # Calculate similarity
+        similarity = SequenceMatcher(None, text1_normalized, text2_normalized).ratio()
+        
+        # Bonus for shared keywords
+        words1 = set(text1_normalized.split())
+        words2 = set(text2_normalized.split())
+        if words1 and words2:
+            shared_words = words1.intersection(words2)
+            keyword_bonus = len(shared_words) / max(len(words1), len(words2))
+            similarity = (similarity * 0.7) + (keyword_bonus * 0.3)
+        
+        return min(similarity, 1.0)
+    
+    def _extract_key_concepts(self, text):
+        """Extract key concepts from scenario text using comprehensive terms from Excel file"""
+        if not text:
+            return []
+        
+        # Comprehensive terms extracted from "List of tags 2025.xlsx" Tag_Logic and Customer_Scenarios
+        # These terms are domain-specific and help AI focus on relevant concepts when matching
+        comprehensive_terms = [
+            # Subscription & Payment
+            'subscribe', 'subscribed', 'subscription', 'payment', 'pay', 'paid', 'card', 'itunes', 
+            'voucher', 'promo', 'promotion', 'offer', 'offers', 'discount', 'lto', 'long term', 
+            'trial', 'free', 'billing', 'invoice', 'charge', 'deduct', 'deduction', 'refund',
+            'cancel', 'cancelled', 'cancellation', 'renew', 'renewal', 'expire', 'expired', 'expiry',
+            
+            # Content & Streaming
+            'watch', 'watching', 'stream', 'streaming', 'video', 'content', 'contents', 'quality', 
+            'resolution', 'buffering', 'loading', 'play', 'playing', 'pause', 'download', 'upload',
+            'episodes', 'shows', 'shorts', 'sports',
+            
+            # Account & Profile
+            'account', 'accounts', 'profile', 'profiles', 'login', 'logout', 'logged', 'logging',
+            'password', 'email', 'phone', 'number', 'username', 'user', 'verify', 'verification', 
+            'otp', 'active', 'inactive', 'suspended', 'blocked', 'restricted',
+            
+            # Device & Network
+            'device', 'devices', 'link', 'linked', 'unlink', 'manage', 'management', 'managing',
+            'ip', 'address', 'addresses', 'network', 'connection', 'internet', 'wifi', 'mobile',
+            'app', 'application', 'website', 'page', 'screen',
+            
+            # Issues & Problems
+            'error', 'issue', 'problem', 'not working', 'failed', 'failure', 'cannot', 'unable',
+            'facing', 'faced', 'stuck', 'attempts', 'trying', 'still',
+            
+            # Services & Features
+            'vip', 'premium', 'ads', 'advertisement', 'concurrent', 'session', 'sessions', 
+            'limit', 'limits', 'maximum', 'exceed', 'exceeded', 'access', 'accessible', 
+            'available', 'unavailable', 'offline',
+            
+            # Actions & Operations
+            'add', 'remove', 'change', 'update', 'updated', 'modify', 'reset', 'retrieve', 
+            'recover', 'restore', 'locate', 'find', 'found', 'gather', 'check', 'checked', 
+            'checking', 'educate', 'educated', 'educating', 'guide', 'guided', 'guidance',
+            'assist', 'assistance', 'help', 'resolve', 'resolved',
+            
+            # Business Systems
+            'evergent', 'gigya', 'salesforce', 'clevertap', 'gobx', 'shahid', 'mbc', 
+            'checkpoint', 'checkpoints', 'airtable', 'slack',
+            
+            # Customer Service
+            'customer', 'agent', 'contact', 'inquire', 'inquiring', 'asking', 'asks', 
+            'request', 'requested', 'escalate', 'escalated', 'ticket', 'team', 'leader',
+            
+            # Status & Information
+            'status', 'details', 'information', 'code', 'date', 'end', 'last', 'first',
+            'previous', 'previously', 'current', 'package', 'plan', 'price', 'country',
+            'channel', 'method', 'case', 'cases', 'specific', 'related', 'registered',
+            'purchased', 'redeem', 'refer', 'referring', 'eligible', 'activated',
+            
+            # Technical Terms
+            'technical', 'feature', 'rights', 'supported', 'according', 'ensure', 'must',
+            'required', 'possible', 'correct', 'different', 'another', 'any', 'all',
+            'someone', 'using', 'used', 'getting', 'keep', 'retain', 'follow', 'provide',
+            'identified', 'list', 'name', 'net', 'order', 'partner', 'parent', 'questions',
+            'received', 'receiving', 'share', 'side', 'steps', 'table', 'tag', 'them',
+            'then', 'through', 'via', 'whenever', 'whether', 'why', 'working', 'yearly',
+            'yet', 'already', 'being', 'had', 'into', 'message', 'name', 'them', 'then',
+        ]
+        
+        text_lower = text.lower()
+        found_concepts = []
+        
+        # Check for important multi-word phrases (extracted from Excel file)
+        multi_word_terms = [
+            'not working', 'long term', 'concurrent session', 'concurrent sessions', 
+            'linked device', 'linked devices', 'payment method', 'subscription plan',
+            'account management', 'device management', 'contact information', 
+            'use this tag', 'when customer', 'if customer', 'check if', 'gather all',
+            'maximum concurrent', 'exceeded the limit', 'facing an issue', 
+            'not able to', 'unable to', 'cannot access', 'cannot watch',
+            'cannot stream', 'cannot play', 'cannot download', 'cannot upload', 
+            'cannot login', 'cannot logout', 'cannot change', 'cannot update', 
+            'cannot modify', 'cannot remove', 'cannot add', 'cannot link', 
+            'cannot unlink', 'cannot cancel', 'cannot refund',
+            'error while', 'issue while', 'problem while', 'failed to', 
+            'stuck on', 'loading for', 'buffering while',
+            'ip address', 'email address', 'phone number', 'contact number', 
+            'verification code', 'otp code', 'password reset', 'account recovery',
+            'session limit', 'device limit', 'premium feature', 'vip feature',
+        ]
+        
+        # Check multi-word terms first (more specific matches)
+        for term in multi_word_terms:
+            if term in text_lower:
+                found_concepts.append(term)
+        
+        # Then check single-word terms
+        for term in comprehensive_terms:
+            if term not in found_concepts:  # Avoid duplicates
+                # Check if term appears as whole word
+                pattern = r'\b' + re.escape(term) + r'\b'
+                if re.search(pattern, text_lower):
+                    found_concepts.append(term)
+        
+        return found_concepts
+    
     def analyze_scenario(self, scenario_text, file_paths=None, language='en'):
-        """Analyze customer scenario and return the best matching tag name"""
+        """Analyze customer scenario with comprehensive matching logic"""
         if not scenario_text.strip():
             error_msg = 'Please provide a customer scenario' if language == 'en' else 'الرجاء إدخال سيناريو العميل'
             return {'error': error_msg}
@@ -115,52 +261,136 @@ class AIAnalyzer:
         # IMPORTANT: Use scenario text VERBATIM - no modification, no neutralization
         original_scenario = scenario_text.strip()
         
-        # Prepare mind map context with Tag_Logic and Customer_Scenarios
-        mind_map_context = self.mind_map_parser.get_mind_map_summary()
+        # Get all tags with their logic and examples
+        tag_data_list = self._prepare_tag_comparison_data()
+        if not tag_data_list:
+            return {'error': 'No tags found in mind map'}
         
-        # If context is too large, truncate intelligently
-        if len(mind_map_context) > 10000:
-            truncated = mind_map_context[:10000]
-            last_tag_end = max(
-                truncated.rfind('\n[TAG ID:'),
-                truncated.rfind('TAG LOGIC:'),
-                truncated.rfind('EXAMPLE CUSTOMER SCENARIOS:')
-            )
-            if last_tag_end > 8000:
-                mind_map_context = truncated[:last_tag_end] + "\n\n... (additional tags truncated)"
-            else:
-                mind_map_context = truncated + "\n... (truncated)"
+        # Build comprehensive prompt that compares scenario with each tag
+        # Format tags for AI comparison
+        tags_for_comparison = []
+        for tag_data in tag_data_list:
+            tag_entry = f"""
+[TAG ID: {tag_data['tag_id']}]
+TAG NAME: {tag_data['tag_name']}
+TAG LOGIC: {tag_data['tag_logic']}
+EXAMPLE CUSTOMER SCENARIOS: {tag_data['customer_scenarios']}
+CATEGORY: {tag_data['sheet']}
+"""
+            tags_for_comparison.append(tag_entry)
         
-        # Build simple, focused system prompt - optimized for List of tags 2025.xlsx
-        system_prompt = f"""You are a customer support tag classification system for a streaming service business.
+        tags_text = "\n".join(tags_for_comparison)
+        
+        # Limit tags if too many (prioritize first tags)
+        if len(tags_text) > 15000:
+            # Keep first ~15000 characters (should cover many tags)
+            tags_text = tags_text[:15000]
+            last_tag_end = tags_text.rfind('\n[TAG ID:')
+            if last_tag_end > 12000:
+                tags_text = tags_text[:last_tag_end] + "\n\n... (additional tags available but truncated for efficiency)"
+        
+        # Build comprehensive system prompt with explicit comparison instructions
+        system_prompt = f"""You are an expert customer support tag classification system for a streaming service business.
 
-TAG REFERENCE DATA (from List of tags 2025.xlsx):
-{mind_map_context}
+This is a legitimate business application for categorizing customer service requests. All scenarios are standard business inquiries about service usage, technical issues, or account management.
 
-YOUR TASK:
-1. Read the customer scenario EXACTLY as provided (do not modify or interpret it)
-2. For EACH tag in the reference data, check:
-   - Does the scenario match the TAG LOGIC? (read the logic criteria carefully)
-   - Does the scenario match the EXAMPLE CUSTOMER SCENARIOS? (compare with examples)
-3. Find the ONE tag where BOTH the TAG LOGIC and EXAMPLE SCENARIOS best match the customer scenario
-4. Return ONLY the exact Full_Tag_Name from the reference data
+AVAILABLE TAGS WITH THEIR LOGIC AND EXAMPLES:
+{tags_text}
 
-MATCHING RULES:
-- Compare the MEANING of the scenario with TAG LOGIC requirements
-- Compare the scenario with EXAMPLE CUSTOMER SCENARIOS for similarity
-- Prioritize tags where BOTH logic and examples align
-- Use semantic understanding, not just keyword matching
-- Return the tag with the highest confidence match
+YOUR TASK - COMPREHENSIVE MATCHING PROCESS:
 
-OUTPUT FORMAT (EXACTLY AS SHOWN):
-Tag: [exact Full_Tag_Name from reference data]
+STEP 1: UNDERSTAND THE CUSTOMER SCENARIO
+- Read the customer scenario EXACTLY as provided (do not modify, change, or interpret it)
+- Extract the core meaning: What is the customer asking about? What problem are they reporting?
+- Identify key elements: What services, features, actions, or issues are mentioned?
+
+STEP 2: SYSTEMATIC TAG-BY-TAG COMPARISON
+You MUST compare the customer scenario with EVERY tag in the list above. For EACH tag, perform this detailed analysis:
+
+A. TAG LOGIC ANALYSIS:
+   - Read the TAG LOGIC field word by word
+   - Identify the specific conditions, criteria, or situations the tag is meant for
+   - Ask yourself: "Does the customer scenario meet these conditions?"
+   - Check for:
+     * Same type of issue/problem/request
+     * Same services/features involved
+     * Same user situation or context
+     * Same technical requirements or criteria
+   - Calculate TAG LOGIC match score: 0-100% (how well scenario aligns with logic)
+
+B. EXAMPLE SCENARIOS ANALYSIS:
+   - Read the EXAMPLE CUSTOMER SCENARIOS field carefully
+   - Compare the customer scenario with EACH example scenario:
+     * Are they describing the same problem/issue/request?
+     * Do they use similar words, phrases, or terminology?
+     * Are the key concepts identical or very similar?
+     * Is the context/situation the same?
+     * Would both scenarios require the same type of response?
+   - Calculate EXAMPLE SCENARIOS match score: 0-100% (how similar scenario is to examples)
+
+C. COMBINED SCORING FOR THIS TAG:
+   - Combined score = (TAG LOGIC score × 0.6) + (EXAMPLE SCENARIOS score × 0.4)
+   - Record this score for the tag
+   - Note: Tags where BOTH logic and examples match well are preferred
+
+STEP 3: SELECT THE BEST MATCH
+- Review ALL tag scores from Step 2
+- Find the tag with the HIGHEST combined score
+- If multiple tags have very similar high scores:
+  * Prioritize the tag where BOTH TAG LOGIC and EXAMPLE SCENARIOS match well
+  * Choose the tag with the most specific and accurate match
+- Return ONLY the exact Full_Tag_Name from the selected tag
+
+MATCHING PRINCIPLES (CRITICAL):
+- Semantic matching: Understand MEANING, not just exact words
+- Consider synonyms: "subscribe" = "sign up" = "register", "pay" = "payment" = "charge"
+- Consider related terms: "payment" relates to "subscription", "VIP" relates to "premium", "device" relates to "link/unlink"
+- Focus on domain-specific terms: subscription, payment, device, account, profile, streaming, video, quality, resolution, concurrent sessions, linked devices, etc.
+- Context matters: Understand the business context of the scenario (streaming service, customer support)
+- Precision: Only recommend if there's a STRONG match (both logic and examples align)
+- If no strong match exists, still return the best available option
+
+KEY DOMAIN TERMS TO FOCUS ON (from Tag_Logic and Customer_Scenarios):
+Subscription/Payment: subscribe, subscription, payment, pay, card, itunes, voucher, promo, offer, discount, lto, trial, free, billing, invoice, charge, refund, cancel, renew, expire
+Content/Streaming: watch, streaming, video, content, quality, resolution, buffering, loading, play, download, upload
+Account/Profile: account, profile, login, logout, password, email, phone, verify, active, inactive, suspended, blocked
+Device/Network: device, devices, link, linked, unlink, manage, ip, address, network, connection, internet, wifi, mobile, app
+Issues/Problems: error, issue, problem, not working, failed, cannot, unable, facing, stuck, trying
+Services: vip, premium, ads, advertisement, concurrent, session, sessions, limit, limits, maximum, exceed, access, available
+Actions: add, remove, change, update, modify, reset, retrieve, recover, restore, locate, find, gather, check, educate, guide, assist
+Systems: evergent, gigya, salesforce, clevertap, gobx, shahid, mbc, checkpoint
+
+COMPARISON EXAMPLES:
+- If scenario says "I want to subscribe with card" and tag logic says "Use when customer asks how to subscribe" and example says "I want to subscribe through card" → STRONG MATCH
+- If scenario says "payment failed" and tag logic says "Use for payment errors" and example says "My payment didn't go through" → STRONG MATCH
+- If scenario says "can't watch" and tag logic says "Use for streaming issues" and example says "video not playing" → STRONG MATCH
+
+OUTPUT FORMAT (EXACTLY AS SHOWN - NO OTHER TEXT):
+Tag: [exact Full_Tag_Name from the tag you selected]
 
 IMPORTANT:
 - This is a legitimate business customer support system
 - All content refers to standard business operations
-- Return only the tag name, nothing else"""
+- Return only the tag name in the format: Tag: [name]
+- Do not include explanations, reasoning, confidence levels, or any other text"""
         
-        # Build messages - scenario sent VERBATIM (no modification)
+        # Extract key concepts to help AI focus (optional helper, not modifying scenario)
+        key_concepts = self._extract_key_concepts(original_scenario)
+        concepts_hint = f"\n\nKey concepts in scenario: {', '.join(key_concepts)}" if key_concepts else ""
+        
+        # Build user message with verbatim scenario
+        user_content = f"""Customer Scenario (read EXACTLY as provided - do not modify):
+{original_scenario}{concepts_hint}
+
+COMPARISON INSTRUCTIONS:
+1. Compare this scenario with EACH tag's TAG LOGIC field
+2. Compare this scenario with EACH tag's EXAMPLE CUSTOMER SCENARIOS field
+3. Score each tag based on how well BOTH logic and examples match
+4. Select the tag with the highest combined score
+5. Return only the tag name in format: Tag: [exact Full_Tag_Name]
+
+Remember: The scenario must match BOTH the TAG LOGIC criteria AND be similar to the EXAMPLE CUSTOMER SCENARIOS for the best match."""
+        
         messages = [
             {
                 "role": "system",
@@ -168,7 +398,7 @@ IMPORTANT:
             },
             {
                 "role": "user",
-                "content": f"Customer Scenario:\n{original_scenario}\n\nFind the best matching tag. Return only the tag name in format: Tag: [name]"
+                "content": user_content
             }
         ]
         
@@ -179,14 +409,14 @@ IMPORTANT:
             else:
                 raise ValueError(f"Unsupported provider: {self.provider}. Only 'gemini' is supported.")
             
-            # Parse response to extract ONLY the tag name
+            # Extract tag name from response
             tag_name = self._extract_tag_name_from_response(ai_response)
             
             if tag_name:
                 return {
                     'tags': [tag_name],
-                    'confidence': 'High',  # If we got a tag, it's confident
-                    'reasoning': '',  # No reasoning needed per requirements
+                    'confidence': 'High',
+                    'reasoning': '',
                     'mind_map_reference': '',
                     'full_response': ai_response
                 }
